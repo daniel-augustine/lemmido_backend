@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "dev": "pnpm --filter realtime dev",
+    "try": "pnpm --filter realtime try",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
