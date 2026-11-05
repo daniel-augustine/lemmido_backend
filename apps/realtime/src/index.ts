@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { jwtVerify } from "jose";
 import { z } from "zod";
@@ -46,7 +46,7 @@ server.on("upgrade", async (req, socket, head) => {
   }
 });
 
-wss.on("connection", (ws: WebSocket, _req, userId: string) => {
+wss.on("connection", (ws: WebSocket, _req: IncomingMessage, userId: string) => {
   console.log(`connected: ${userId}`);
 
   ws.on("message", (data) => {
