@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: lemmido-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lemmido
+      POSTGRES_PASSWORD: lemmido
+      POSTGRES_DB: lemmido
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Mount SQL/`.sh` files here to auto-run them on first start:
+      # - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lemmido -d lemmido"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
