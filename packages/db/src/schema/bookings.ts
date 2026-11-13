@@ -24,9 +24,9 @@ export const bookings = pgTable(
   "bookings",
   {
     bookingId: varchar("booking_id", { length: 20 }).primaryKey(),
-    userId: varchar("user_id", { length: 10 })
+    userId: text("user_id")
       .notNull()
-      .references(() => users.userId),
+      .references(() => users.id),
     serviceId: varchar("service_id", { length: 10 })
       .notNull()
       .references(() => services.serviceId),
@@ -59,7 +59,7 @@ export const bookings = pgTable(
     approvalMode: approvalMode("approval_mode").notNull(),
     quoteAmount: integer("quote_amount"),
     currency: char("currency", { length: 3 }).notNull(),
-    quotedBy: varchar("quoted_by", { length: 10 }).references(() => users.userId),
+    quotedBy: text("quoted_by").references(() => users.id),
     confirmBy: timestamp("confirm_by", { withTimezone: true }).notNull(),
     payBy: timestamp("pay_by", { withTimezone: true }),
 
@@ -68,15 +68,13 @@ export const bookings = pgTable(
     paymentRef: varchar("payment_ref", { length: 100 }).unique(),
 
     // Assignment
-    helperId: varchar("helper_id", { length: 10 }).references(() => users.userId),
+    helperId: text("helper_id").references(() => users.id),
     helperSource: helperSource("helper_source"),
 
     // Denial / cancellation
     denialReason: text("denial_reason"),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
-    cancelledBy: varchar("cancelled_by", { length: 10 }).references(
-      () => users.userId,
-    ),
+    cancelledBy: text("cancelled_by").references(() => users.id),
     cancellationReason: text("cancellation_reason"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -22,13 +22,13 @@ export const adminAlerts = pgTable(
     nextBookingId: varchar("next_booking_id", { length: 20 }).references(
       () => bookings.bookingId,
     ),
-    helperId: varchar("helper_id", { length: 10 })
+    helperId: text("helper_id")
       .notNull()
-      .references(() => users.userId),
+      .references(() => users.id),
     message: text("message").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-    resolvedBy: varchar("resolved_by", { length: 10 }).references(() => users.userId),
+    resolvedBy: text("resolved_by").references(() => users.id),
     resolution: alertResolution("resolution"),
   },
   (table) => [

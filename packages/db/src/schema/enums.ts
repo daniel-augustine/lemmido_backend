@@ -3,8 +3,6 @@ import { pgEnum } from "drizzle-orm/pg-core";
 // The enums below mirror the value sets defined in datamodel.md.
 // Native Postgres enums are the cleanest way to constrain these columns.
 
-export const userRole = pgEnum("user_role", ["customer", "admin", "employee"]);
-
 export const approvalMode = pgEnum("approval_mode", ["auto", "admin"]);
 
 export const bookingStatus = pgEnum("booking_status", [

@@ -41,11 +41,11 @@ async function seed() {
   await db
     .insert(users)
     .values([
-      { userId: "01", role: "customer", name: "Anu Thomas", email: "anu@example.com", phone: "+919000000001" },
-      { userId: "02", role: "customer", name: "Binu George", email: "binu@example.com", phone: "+919000000002" },
-      { userId: "03", role: "admin", name: "Admin", email: "admin@example.com", phone: "+919000000003" },
-      { userId: "04", role: "employee", name: "Helper One", email: "helper1@example.com", phone: "+919000000004" },
-      { userId: "05", role: "employee", name: "Helper Two", email: "helper2@example.com", phone: "+919000000005" },
+      { id: "11111111-1111-4111-8111-111111111111", role: "customer", name: "Anu Thomas", email: "anu@example.com", phoneNumber: "+919000000001" },
+      { id: "22222222-2222-4222-8222-222222222222", role: "customer", name: "Binu George", email: "binu@example.com", phoneNumber: "+919000000002" },
+      { id: "33333333-3333-4333-8333-333333333333", role: "admin", name: "Admin", email: "admin@example.com", phoneNumber: "+919000000003" },
+      { id: "44444444-4444-4444-8444-444444444444", role: "employee", name: "Helper One", email: "helper1@example.com", phoneNumber: "+919000000004" },
+      { id: "55555555-5555-4555-8555-555555555555", role: "employee", name: "Helper Two", email: "helper2@example.com", phoneNumber: "+919000000005" },
     ])
     .onConflictDoNothing();
 

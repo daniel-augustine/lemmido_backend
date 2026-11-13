@@ -1,5 +1,5 @@
 {
-  "id": "5bd9833d-5e77-4783-ae5e-b0c6bf9011b8",
+  "id": "5d3d1594-f5ff-4785-bff1-fffb0661a0f1",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -8,17 +8,10 @@
       "name": "users",
       "schema": "",
       "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "varchar(10)",
+        "id": {
+          "name": "id",
+          "type": "text",
           "primaryKey": true,
-          "notNull": true
-        },
-        "role": {
-          "name": "role",
-          "type": "user_role",
-          "typeSchema": "public",
-          "primaryKey": false,
           "notNull": true
         },
         "name": {
@@ -31,11 +24,57 @@
           "name": "email",
           "type": "varchar(255)",
           "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "phone_number": {
+          "name": "phone_number",
+          "type": "varchar(20)",
+          "primaryKey": false,
           "notNull": false
         },
-        "phone": {
-          "name": "phone",
-          "type": "varchar(20)",
+        "phone_number_verified": {
+          "name": "phone_number_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'customer'"
+        },
+        "country": {
+          "name": "country",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deactivated_at": {
+          "name": "deactivated_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -45,9 +84,33 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "users_active_employees": {
+          "name": "users_active_employees",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"users\".\"role\" = 'employee' AND \"users\".\"deactivated_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -58,16 +121,25 @@
             "email"
           ]
         },
-        "users_phone_unique": {
-          "name": "users_phone_unique",
+        "users_phone_number_unique": {
+          "name": "users_phone_number_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "phone"
+            "phone_number"
           ]
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "users_phone_e164": {
+          "name": "users_phone_e164",
+          "value": "\"users\".\"phone_number\" ~ '^\\+[1-9][0-9]{6,14}$'"
+        },
+        "users_employee_phone": {
+          "name": "users_employee_phone",
+          "value": "\"users\".\"role\" <> 'employee' OR \"users\".\"phone_number\" IS NOT NULL"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.services": {
@@ -131,7 +203,7 @@
         },
         "user_id": {
           "name": "user_id",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -275,7 +347,7 @@
         },
         "quoted_by": {
           "name": "quoted_by",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -306,7 +378,7 @@
         },
         "helper_id": {
           "name": "helper_id",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -331,7 +403,7 @@
         },
         "cancelled_by": {
           "name": "cancelled_by",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -410,15 +482,15 @@
         }
       },
       "foreignKeys": {
-        "bookings_user_id_users_user_id_fk": {
-          "name": "bookings_user_id_users_user_id_fk",
+        "bookings_user_id_users_id_fk": {
+          "name": "bookings_user_id_users_id_fk",
           "tableFrom": "bookings",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -436,41 +508,41 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "bookings_quoted_by_users_user_id_fk": {
-          "name": "bookings_quoted_by_users_user_id_fk",
+        "bookings_quoted_by_users_id_fk": {
+          "name": "bookings_quoted_by_users_id_fk",
           "tableFrom": "bookings",
           "tableTo": "users",
           "columnsFrom": [
             "quoted_by"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "bookings_helper_id_users_user_id_fk": {
-          "name": "bookings_helper_id_users_user_id_fk",
+        "bookings_helper_id_users_id_fk": {
+          "name": "bookings_helper_id_users_id_fk",
           "tableFrom": "bookings",
           "tableTo": "users",
           "columnsFrom": [
             "helper_id"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "bookings_cancelled_by_users_user_id_fk": {
-          "name": "bookings_cancelled_by_users_user_id_fk",
+        "bookings_cancelled_by_users_id_fk": {
+          "name": "bookings_cancelled_by_users_id_fk",
           "tableFrom": "bookings",
           "tableTo": "users",
           "columnsFrom": [
             "cancelled_by"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -509,7 +581,7 @@
         },
         "user_id": {
           "name": "user_id",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -548,15 +620,15 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "dashboard_user_id_users_user_id_fk": {
-          "name": "dashboard_user_id_users_user_id_fk",
+        "dashboard_user_id_users_id_fk": {
+          "name": "dashboard_user_id_users_id_fk",
           "tableFrom": "dashboard",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -621,7 +693,7 @@
         },
         "helper_id": {
           "name": "helper_id",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -646,7 +718,7 @@
         },
         "resolved_by": {
           "name": "resolved_by",
-          "type": "varchar(10)",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -715,28 +787,28 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "admin_alerts_helper_id_users_user_id_fk": {
-          "name": "admin_alerts_helper_id_users_user_id_fk",
+        "admin_alerts_helper_id_users_id_fk": {
+          "name": "admin_alerts_helper_id_users_id_fk",
           "tableFrom": "admin_alerts",
           "tableTo": "users",
           "columnsFrom": [
             "helper_id"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "admin_alerts_resolved_by_users_user_id_fk": {
-          "name": "admin_alerts_resolved_by_users_user_id_fk",
+        "admin_alerts_resolved_by_users_id_fk": {
+          "name": "admin_alerts_resolved_by_users_id_fk",
           "tableFrom": "admin_alerts",
           "tableTo": "users",
           "columnsFrom": [
             "resolved_by"
           ],
           "columnsTo": [
-            "user_id"
+            "id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -839,8 +911,8 @@
         "late"
       ]
     },
-    "public.user_role": {
-      "name": "user_role",
+    "public.role": {
+      "name": "role",
       "schema": "public",
       "values": [
         "customer",
