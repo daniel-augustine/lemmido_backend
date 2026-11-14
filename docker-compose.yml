@@ -1,23 +1,23 @@
+# Local development database. Start with: docker compose up -d
+# Everyone uses the same names, so the DATABASE_URL in .env.example works as is.
 services:
   postgres:
-    image: postgres:17-alpine
-    container_name: lemmido-postgres
+    image: postgres:17
+    container_name: lemmido-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: lemmido
-      POSTGRES_PASSWORD: lemmido
-      POSTGRES_DB: lemmido
+      POSTGRES_USER: ${POSTGRES_USER:-lemmido}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lemmido_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-lemmido}
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      # Mount SQL/`.sh` files here to auto-run them on first start:
-      # - ./db/init:/docker-entrypoint-initdb.d
+      - lemmido-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lemmido -d lemmido"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lemmido} -d ${POSTGRES_DB:-lemmido}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
 volumes:
-  pgdata:
+  lemmido-pgdata:

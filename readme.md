@@ -1,15 +1,24 @@
-docker commands
+## Local database
 
-docker compose up -d        # start Postgres in the background
-docker compose ps           # check it's running / healthy
-docker compose logs -f      # tail logs
-docker compose down         # stop it (keeps data)
-docker compose down -v      # stop and delete data
+Everyone uses the same local Postgres: container `lemmido-db`, volume `lemmido-pgdata`,
+user/db `lemmido`, password `lemmido_dev`.
 
-docker exec -it lemmido-postgres psql -U lemmido -d lemmido
+    cp .env.example .env
+    cp packages/db/.env.example packages/db/.env
+    docker compose up -d        # start Postgres in the background
+    docker compose ps           # check it's running / healthy
+    pnpm install
+    pnpm db:migrate             # create the tables
+    pnpm db:seed                # example services and users
 
-postgresql://lemmido:lemmido@localhost:5432/lemmido
+    docker compose logs -f      # tail logs
+    docker compose down         # stop it (keeps data)
+    docker compose down -v      # stop and delete data
 
+    docker exec -it lemmido-db psql -U lemmido -d lemmido
 
-cd D:\planitbeyond-backend\lemmido_backend
-docker compose up -d
+    postgres://lemmido:lemmido_dev@localhost:5432/lemmido
+
+If you had the old `lemmido-postgres` container, remove it and its data once:
+
+    docker rm -f lemmido-postgres && docker volume rm lemmido_backend_pgdata

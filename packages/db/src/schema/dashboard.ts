@@ -1,7 +1,7 @@
 import { pgTable, varchar, text, boolean, timestamp } from "drizzle-orm/pg-core";
-import { users } from "./users.js";
-import { bookings } from "./bookings.js";
-import { dashboardSection } from "./enums.js";
+import { users } from "./users.ts";
+import { bookings } from "./bookings.ts";
+import { dashboardSection } from "./enums.ts";
 
 export const dashboard = pgTable("dashboard", {
   dashId: varchar("dash_id", { length: 25 }).primaryKey(),

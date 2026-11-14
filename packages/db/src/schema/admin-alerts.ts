@@ -7,9 +7,9 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { users } from "./users.js";
-import { bookings } from "./bookings.js";
-import { alertKind, alertResolution } from "./enums.js";
+import { users } from "./users.ts";
+import { bookings } from "./bookings.ts";
+import { alertKind, alertResolution } from "./enums.ts";
 
 export const adminAlerts = pgTable(
   "admin_alerts",

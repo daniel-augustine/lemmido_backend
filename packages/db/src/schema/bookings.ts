@@ -9,8 +9,8 @@ import {
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
-import { users } from "./users.js";
-import { services } from "./services.js";
+import { users } from "./users.ts";
+import { services } from "./services.ts";
 import {
   approvalMode,
   bookingStatus,
@@ -18,7 +18,7 @@ import {
   helperSource,
   jobStatus,
   overrunStatus,
-} from "./enums.js";
+} from "./enums.ts";
 
 export const bookings = pgTable(
   "bookings",

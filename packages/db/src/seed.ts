@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { db } from "./client.js";
-import { services, users } from "./schema/index.js";
+import { db } from "./client.ts";
+import { services, users } from "./schema/index.ts";
 
 // Example rows from datamodel.md, plus a few users so the
 // availability queries have helpers to work with. Safe to re-run.
