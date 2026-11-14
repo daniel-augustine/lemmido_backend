@@ -1,4 +1,5 @@
 # Local development database. Start with: docker compose up -d
+# Everyone uses the same names, so the DATABASE_URL in .env.example works as is.
 services:
   postgres:
     image: postgres:17

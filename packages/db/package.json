@@ -1,6 +1,6 @@
 {
-  "name": "db",
-  "version": "1.0.0",
+  "name": "@lemmido/db",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,10 +10,13 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
-    "studio": "drizzle-kit studio"
+    "studio": "drizzle-kit studio",
+    "seed": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit"
   },
   "packageManager": "pnpm@10.32.1",
   "dependencies": {
+    "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1"
   },
@@ -21,6 +24,7 @@
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }
