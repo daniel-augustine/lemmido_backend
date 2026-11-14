@@ -1,0 +1,22 @@
+# Local development database. Start with: docker compose up -d
+services:
+  postgres:
+    image: postgres:17
+    container_name: lemmido-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lemmido}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lemmido_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-lemmido}
+    ports:
+      - "5432:5432"
+    volumes:
+      - lemmido-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lemmido} -d ${POSTGRES_DB:-lemmido}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  lemmido-pgdata:
