@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "pnpm --filter realtime dev",
+    "dev": "pnpm --parallel --filter realtime --filter api dev",
+    "dev:realtime": "pnpm --filter realtime dev",
+    "dev:api": "pnpm --filter api dev",
     "try": "pnpm --filter realtime try",
     "db:generate": "pnpm --filter @lemmido/db generate",
     "db:migrate": "pnpm --filter @lemmido/db migrate",
