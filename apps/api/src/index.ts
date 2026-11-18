@@ -29,6 +29,7 @@ serve({ fetch: app.fetch, port: PORT }, async (info) => {
   console.log(`  GET ${url}/bookings/available-times?date=YYYY-MM-DD&taskMinutes=120`);
   console.log(`  POST ${url}/bookings/check-availability {date, time, taskMinutes}`);
   console.log(`  POST ${url}/bookings/trip {serviceId, vehicleSource, from, to, onSiteMinutes}`);
+  console.log(`  GET ${url}/bookings/price?serviceId=&vehicleSource=&fromLat=&fromLng=&toLat=&toLng=&onSiteMinutes=`);
   console.log(`  CORS allowed for: ${WEB_ORIGINS.join(", ")}`);
 
   // Requests still start while the database is down; this only says so up front
