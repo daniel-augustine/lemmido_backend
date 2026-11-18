@@ -14,6 +14,7 @@ import { services } from "./services.ts";
 import {
   approvalMode,
   bookingStatus,
+  companionPurpose,
   paymentStatus,
   helperSource,
   jobStatus,
@@ -30,6 +31,8 @@ export const bookings = pgTable(
     serviceId: varchar("service_id", { length: 10 })
       .notNull()
       .references(() => services.serviceId),
+    // Companion bookings only: where the companion goes with the customer
+    companionPurpose: companionPurpose("companion_purpose"),
 
     // Route / timing
     pickup: text("pickup"),

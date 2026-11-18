@@ -1,15 +1,19 @@
 import { Hono } from "hono";
-import { inArray, sql } from "drizzle-orm";
-import { bookings, bookingsAreOpen, db } from "@lemmido/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { bookings, bookingsAreOpen, db, serviceRates, services } from "@lemmido/db";
 import {
   BUSINESS_TIMEZONE,
   isSlotTime,
   MAX_BOOKINGS_PER_DAY,
   MAX_TASK_MS,
   MIN_NOTICE_HOURS,
+  priceBooking,
   roundUpToSlot,
+  tripFromLegs,
   zonedTimeToUtc,
+  type Rates,
 } from "@lemmido/shared";
+import { fetchTripLegs, type LatLng } from "../google-routes.ts";
 import { findAvailableHelpers, freeStartTimes } from "../helper-availability.ts";
 
 // Longest range one request can ask for: a year, with room for the partial months at each end
@@ -46,6 +50,16 @@ function parseRange(from: string | undefined, to: string | undefined) {
   if ((toTime - fromTime) / DAY_MS > MAX_RANGE_DAYS) return `The range can be at most ${MAX_RANGE_DAYS} days`;
   return { fromTime, toTime };
 }
+
+// A { lat, lng } point from a request body, or null
+function parseLatLng(value: unknown): LatLng | null {
+  const { lat, lng } = (value ?? {}) as Record<string, unknown>;
+  if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+// Prices are in INR until bookings follow the customer's site currency (D21)
+const CURRENCY = "INR";
 
 export const bookingRoutes = new Hono();
 
@@ -134,4 +148,60 @@ bookingRoutes.post("/check-availability", async (c) => {
 
   const helpers = await findAvailableHelpers({ start, end: new Date(start.getTime() + taskMs) });
   return c.json({ available: helpers.length > 0 });
+});
+
+// POST /bookings/trip
+//   { serviceId: "ser_01", vehicleSource: "ours" | "customer",
+//     from: { lat, lng }, to: { lat, lng }, onSiteMinutes: 60 }
+// → { legs, distanceKm, driveMinutes, leaveBaseMinutes, taskMinutes, currency, quote }
+// The job's three legs (Base → From → To → Base) from Google, the task length to check
+// availability for, and the price. onSiteMinutes is the driver's waiting time or the
+// companion's service time. A quote with approvalMode "admin" means an admin prices it.
+bookingRoutes.post("/trip", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const { serviceId, vehicleSource, onSiteMinutes, ...points } = (body ?? {}) as Record<string, unknown>;
+  const from = parseLatLng(points.from);
+  const to = parseLatLng(points.to);
+  if (!from || !to) return c.json({ error: "from and to must be { lat, lng }" }, 400);
+  if (vehicleSource !== "ours" && vehicleSource !== "customer") {
+    return c.json({ error: 'vehicleSource must be "ours" or "customer"' }, 400);
+  }
+  if (typeof onSiteMinutes !== "number" || !Number.isFinite(onSiteMinutes) || onSiteMinutes < 0) {
+    return c.json({ error: "onSiteMinutes must be a number of minutes, 0 or more" }, 400);
+  }
+  if (typeof serviceId !== "string") return c.json({ error: "serviceId is required" }, 400);
+
+  const [service] = await db
+    .select({ serviceType: services.serviceType, autoPriced: services.autoPriced })
+    .from(services)
+    .where(eq(services.serviceId, serviceId));
+  if (!service) return c.json({ error: `No service ${serviceId}` }, 400);
+
+  let legs;
+  try {
+    legs = await fetchTripLegs(from, to);
+  } catch (error) {
+    console.error("Couldn't work out the route:", error);
+    return c.json({ error: "Couldn't work out the route. Please try again." }, 502);
+  }
+  const trip = tripFromLegs(legs, onSiteMinutes);
+
+  const rateRows = await db
+    .select({ kind: serviceRates.kind, amount: serviceRates.amount })
+    .from(serviceRates)
+    .where(and(eq(serviceRates.serviceId, serviceId), eq(serviceRates.currency, CURRENCY)));
+  const rates: Rates = Object.fromEntries(rateRows.map((row) => [row.kind, row.amount]));
+
+  const quote = service.autoPriced
+    ? priceBooking({
+        serviceType: service.serviceType,
+        vehicleSource,
+        distanceKm: trip.distanceKm,
+        driveMinutes: trip.driveMinutes,
+        onSiteMinutes,
+        rates,
+      })
+    : { approvalMode: "admin" as const, reason: "This service is priced by an admin" };
+
+  return c.json({ ...trip, currency: CURRENCY, quote });
 });
