@@ -58,3 +58,14 @@ export const alertResolution = pgEnum("alert_resolution", [
   "job_finished",
   "dismissed",
 ]);
+
+// What a service rate is charged per (service_rates.kind)
+export const rateKind = pgEnum("rate_kind", [
+  "per_km", // distance driven in our vehicle
+  "drive_hour", // driving the customer's own vehicle
+  "waiting_hour", // driver waiting at the destination
+  "service_hour", // companion time with the customer
+]);
+
+// Where a companion goes with the customer (bookings.companion_purpose)
+export const companionPurpose = pgEnum("companion_purpose", ["hospital", "bank", "office", "other"]);

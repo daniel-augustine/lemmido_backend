@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { db } from "./client.ts";
-import { services, users } from "./schema/index.ts";
+import { serviceRates, services, users } from "./schema/index.ts";
 
 // Example rows from datamodel.md, plus a few users so the
 // availability queries have helpers to work with. Safe to re-run.
@@ -14,20 +14,12 @@ async function seed() {
         serviceHrs: "2.0",
         description: "Two-way drive to a location",
         autoPriced: true,
-        overrunRate: 100,
-      },
-      {
-        serviceId: "ser_02",
-        serviceType: "hospital_visit",
-        description: "Hospital visit (e.g. Ernakulam hospital)",
-        autoPriced: true,
-        overrunRate: 500,
       },
       {
         serviceId: "ser_03",
         serviceType: "companion",
         description: "Companion",
-        autoPriced: false,
+        autoPriced: true,
       },
       {
         serviceId: "ser_04",
@@ -35,6 +27,20 @@ async function seed() {
         description: "Property management",
         autoPriced: false,
       },
+    ])
+    .onConflictDoNothing();
+
+  // In paise: ₹25/km in our vehicle, ₹100/h driving the customer's vehicle,
+  // ₹20/h driver waiting, ₹100/h companion time
+  await db
+    .insert(serviceRates)
+    .values([
+      { serviceId: "ser_01", kind: "per_km", currency: "INR", amount: 2500 },
+      { serviceId: "ser_01", kind: "drive_hour", currency: "INR", amount: 10000 },
+      { serviceId: "ser_01", kind: "waiting_hour", currency: "INR", amount: 2000 },
+      { serviceId: "ser_03", kind: "per_km", currency: "INR", amount: 2500 },
+      { serviceId: "ser_03", kind: "drive_hour", currency: "INR", amount: 10000 },
+      { serviceId: "ser_03", kind: "service_hour", currency: "INR", amount: 10000 },
     ])
     .onConflictDoNothing();
 
@@ -46,6 +52,9 @@ async function seed() {
       { id: "33333333-3333-4333-8333-333333333333", role: "admin", name: "Admin", email: "admin@example.com", phoneNumber: "+919000000003" },
       { id: "44444444-4444-4444-8444-444444444444", role: "employee", name: "Helper One", email: "helper1@example.com", phoneNumber: "+919000000004" },
       { id: "55555555-5555-4555-8555-555555555555", role: "employee", name: "Helper Two", email: "helper2@example.com", phoneNumber: "+919000000005" },
+      { id: "66666666-6666-4666-8666-666666666666", role: "employee", name: "Helper Three", email: "helper3@example.com", phoneNumber: "+919000000006" },
+      { id: "77777777-7777-4777-8777-777777777777", role: "employee", name: "Helper Four", email: "helper4@example.com", phoneNumber: "+919000000007" },
+      { id: "88888888-8888-4888-8888-888888888888", role: "employee", name: "Helper Five", email: "helper5@example.com", phoneNumber: "+919000000008" },
     ])
     .onConflictDoNothing();
 

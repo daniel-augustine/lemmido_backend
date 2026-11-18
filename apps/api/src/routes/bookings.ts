@@ -1,15 +1,19 @@
 import { Hono } from "hono";
-import { inArray, sql } from "drizzle-orm";
-import { bookings, bookingsAreOpen, db } from "@lemmido/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { bookings, bookingsAreOpen, db, serviceRates, services } from "@lemmido/db";
 import {
   BUSINESS_TIMEZONE,
   isSlotTime,
   MAX_BOOKINGS_PER_DAY,
   MAX_TASK_MS,
   MIN_NOTICE_HOURS,
+  quoteBooking,
   roundUpToSlot,
+  tripFromLegs,
   zonedTimeToUtc,
+  type Rates,
 } from "@lemmido/shared";
+import { fetchTripLegs, type LatLng } from "../google-routes.ts";
 import { findAvailableHelpers, freeStartTimes } from "../helper-availability.ts";
 
 // Longest range one request can ask for: a year, with room for the partial months at each end
@@ -46,6 +50,16 @@ function parseRange(from: string | undefined, to: string | undefined) {
   if ((toTime - fromTime) / DAY_MS > MAX_RANGE_DAYS) return `The range can be at most ${MAX_RANGE_DAYS} days`;
   return { fromTime, toTime };
 }
+
+// A { lat, lng } point from a request body, or null
+function parseLatLng(value: unknown): LatLng | null {
+  const { lat, lng } = (value ?? {}) as Record<string, unknown>;
+  if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+// Prices are in INR until bookings follow the customer's site currency (D21)
+const CURRENCY = "INR";
 
 export const bookingRoutes = new Hono();
 
@@ -134,4 +148,102 @@ bookingRoutes.post("/check-availability", async (c) => {
 
   const helpers = await findAvailableHelpers({ start, end: new Date(start.getTime() + taskMs) });
   return c.json({ available: helpers.length > 0 });
+});
+
+// The details a trip and its price are worked out from, or an error message.
+// onSiteMinutes is the driver's waiting time or the companion's service time.
+function parseTripRequest(fields: Record<string, unknown>) {
+  const { serviceId, vehicleSource, onSiteMinutes } = fields;
+  const from = parseLatLng(fields.from);
+  const to = parseLatLng(fields.to);
+  if (!from || !to) return "from and to must be { lat, lng }";
+  if (vehicleSource !== "ours" && vehicleSource !== "customer") return 'vehicleSource must be "ours" or "customer"';
+  if (typeof onSiteMinutes !== "number" || !Number.isFinite(onSiteMinutes) || onSiteMinutes < 0) {
+    return "onSiteMinutes must be a number of minutes, 0 or more";
+  }
+  if (typeof serviceId !== "string" || !serviceId) return "serviceId is required";
+  return { serviceId, vehicleSource, from, to, onSiteMinutes } as const;
+}
+
+type TripRequest = Exclude<ReturnType<typeof parseTripRequest>, string>;
+
+// The job's three legs (Base → From → To → Base) from Google, and whether it's
+// auto-approved (path A) with its price, or goes to an admin (path B). An error
+// message and HTTP status when the service doesn't exist or no route is found.
+async function workOutTrip({ serviceId, vehicleSource, from, to, onSiteMinutes }: TripRequest) {
+  const [service] = await db
+    .select({ serviceType: services.serviceType, autoPriced: services.autoPriced })
+    .from(services)
+    .where(eq(services.serviceId, serviceId));
+  if (!service) return { error: `No service ${serviceId}`, status: 400 as const };
+
+  let legs;
+  try {
+    legs = await fetchTripLegs(from, to);
+  } catch (error) {
+    console.error("Couldn't work out the route:", error);
+    return { error: "Couldn't work out the route. Please try again.", status: 502 as const };
+  }
+  const trip = tripFromLegs(legs, onSiteMinutes);
+
+  const rateRows = await db
+    .select({ kind: serviceRates.kind, amount: serviceRates.amount })
+    .from(serviceRates)
+    .where(and(eq(serviceRates.serviceId, serviceId), eq(serviceRates.currency, CURRENCY)));
+  const rates: Rates = Object.fromEntries(rateRows.map((row) => [row.kind, row.amount]));
+
+  const quote = quoteBooking({
+    serviceType: service.serviceType,
+    autoPriced: service.autoPriced,
+    vehicleSource,
+    distanceKm: trip.distanceKm,
+    driveMinutes: trip.driveMinutes,
+    onSiteMinutes,
+    rates,
+  });
+  return { trip, quote };
+}
+
+// POST /bookings/trip
+//   { serviceId: "ser_01", vehicleSource: "ours" | "customer",
+//     from: { lat, lng }, to: { lat, lng }, onSiteMinutes: 60 }
+// → { legs, distanceKm, driveMinutes, leaveBaseMinutes, taskMinutes, currency, quote }
+// The job's legs, the task length to check availability for, and the quote.
+// A quote with approvalMode "admin" means an admin prices it.
+bookingRoutes.post("/trip", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const request = parseTripRequest((body ?? {}) as Record<string, unknown>);
+  if (typeof request === "string") return c.json({ error: request }, 400);
+
+  const result = await workOutTrip(request);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+  return c.json({ ...result.trip, currency: CURRENCY, quote: result.quote });
+});
+
+// GET /bookings/price?serviceId=ser_01&vehicleSource=ours&fromLat=9.31&fromLng=76.61
+//                    &toLat=9.59&toLng=76.52&onSiteMinutes=60
+// → { approvalMode: "auto", currency: "INR", amount: 194500, travelAmount, onSiteAmount,
+//     billedKm, billedDriveHrs, billedOnSiteHrs, overrunRate }   (amounts in paise)
+//   or { approvalMode: "admin", reason }: not auto-approved, so an admin sends the price.
+// The price of an auto-approved booking (path A), checked by quoteBooking: an
+// auto-priced service, 9 h or less base to base, and every rate it needs.
+bookingRoutes.get("/price", async (c) => {
+  const number = (name: string) => {
+    const value = c.req.query(name);
+    return value === undefined || value === "" ? undefined : Number(value);
+  };
+  const request = parseTripRequest({
+    serviceId: c.req.query("serviceId"),
+    vehicleSource: c.req.query("vehicleSource"),
+    from: { lat: number("fromLat"), lng: number("fromLng") },
+    to: { lat: number("toLat"), lng: number("toLng") },
+    onSiteMinutes: number("onSiteMinutes"),
+  });
+  if (typeof request === "string") return c.json({ error: request }, 400);
+
+  const result = await workOutTrip(request);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+  const { quote } = result;
+  if (quote.approvalMode === "admin") return c.json(quote);
+  return c.json({ ...quote, currency: CURRENCY });
 });
