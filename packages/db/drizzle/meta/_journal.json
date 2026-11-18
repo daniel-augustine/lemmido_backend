@@ -29,6 +29,13 @@
       "when": 1795041486187,
       "tag": "0003_drop_service_overrun_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795045274864,
+      "tag": "0004_tour_packages",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ user/db `lemmido`, password `lemmido_dev`.
     pnpm install
     pnpm db:migrate             # create the tables
     pnpm db:seed                # example services and users
+    pnpm db:sync-tours          # tour packages from packages/db/config/tour-packages.json
 
     docker compose logs -f      # tail logs
     docker compose down         # stop it (keeps data)
@@ -22,6 +23,21 @@ user/db `lemmido`, password `lemmido_dev`.
 If you had the old `lemmido-postgres` container, remove it and its data once:
 
     docker rm -f lemmido-postgres && docker volume rm lemmido_backend_pgdata
+
+## Tour packages
+
+Tour packages are edited in `packages/db/config/tour-packages.json`, never in the database.
+After changing the file:
+
+    pnpm db:sync-tours --dry-run   # check the file and list what would be added, updated or hidden
+    pnpm db:sync-tours             # write it to the database (one transaction)
+
+- `id` is the package's `services.service_id`: `tp_` plus up to 7 characters. Don't rename it once
+  bookings exist; a renamed id is a new package and the old one is hidden.
+- `pricePerPersonInr` is in whole rupees; it's stored in paise as a `per_person` service rate.
+- A package removed from the file is hidden (`active = false`), not deleted, because bookings may
+  point at it. Putting it back in the file shows it again.
+- The order in the file is the order on the packages page.
 
 ## Services
 
