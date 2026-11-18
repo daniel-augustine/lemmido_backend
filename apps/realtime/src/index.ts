@@ -62,4 +62,4 @@ wss.on("connection", (ws: WebSocket, _req: IncomingMessage, userId: string) => {
   ws.on("close", () => console.log(`disconnected: ${userId}`));
 });
 
-server.listen(PORT, () => console.log(`realtime service on :${PORT}`));
+server.listen(PORT, () => console.log(`realtime service on ws://localhost:${PORT} (health: http://localhost:${PORT}/health)`));

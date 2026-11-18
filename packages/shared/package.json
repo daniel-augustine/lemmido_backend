@@ -1,14 +1,14 @@
 {
-  "name": "shared",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "@lemmido/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "scripts": {
+    "test": "node --test src/*.test.ts"
+  },
   "packageManager": "pnpm@10.32.1",
   "dependencies": {
     "zod": "^4.6.7"

@@ -22,3 +22,13 @@ user/db `lemmido`, password `lemmido_dev`.
 If you had the old `lemmido-postgres` container, remove it and its data once:
 
     docker rm -f lemmido-postgres && docker volume rm lemmido_backend_pgdata
+
+## Services
+
+    pnpm dev            # both services below, each line prefixed with its app
+    pnpm dev:realtime   # apps/realtime: WebSocket server on :8080
+    pnpm dev:api        # apps/api: HTTP API (Hono) on :8081, used by the web and mobile apps
+
+The API reads `.env` (DATABASE_URL, API_PORT, WEB_ORIGIN).
+
+    curl "http://localhost:8081/bookings/full-dates?from=2026-11-16&to=2026-11-30"
