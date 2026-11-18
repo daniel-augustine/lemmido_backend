@@ -15,6 +15,7 @@ import {
   approvalMode,
   bookingStatus,
   companionPurpose,
+  vehicleSource,
   paymentStatus,
   helperSource,
   jobStatus,
@@ -33,6 +34,10 @@ export const bookings = pgTable(
       .references(() => services.serviceId),
     // Companion bookings only: where the companion goes with the customer
     companionPurpose: companionPurpose("companion_purpose"),
+    // Route services only: whose vehicle, which decides how travel is priced
+    vehicleSource: vehicleSource("vehicle_source"),
+    // What the customer told us about the job (seats, luggage, stops…)
+    description: text("description"),
 
     // Route / timing
     pickup: text("pickup"),
