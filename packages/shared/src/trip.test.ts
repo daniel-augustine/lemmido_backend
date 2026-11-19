@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { priceBooking } from "./pricing.ts";
-import { hasOnSiteTime, isRoundTrip, tripFromLegs } from "./trip.ts";
+import { bookingTimes, hasOnSiteTime, isRoundTrip, tripFromLegs } from "./trip.ts";
 
 // Thiruvalla base → Chengannur (pickup) → Kottayam → back to Thiruvalla
 const LEGS = [
@@ -126,4 +126,30 @@ test("customer's vehicle, round trip: all four legs' drive time plus waiting", (
   if (quote.approvalMode !== "auto") return;
   assert.equal(quote.billedDriveHrs, 3);
   assert.equal(quote.amount, 32000);
+});
+
+test("booking times: leave base before the start, back at base after the last leg, on the grid", () => {
+  // Picked 10:00 India time = 04:30 UTC. Leaves 20 min earlier (09:40 → 09:30),
+  // back after 65 + 60 + 47 min = 12:52 → 13:00
+  const times = bookingTimes(new Date("2026-12-01T04:30:00Z"), tripFromLegs(LEGS, 60), 60);
+  assert.equal(times.jobStartsAt.toISOString(), "2026-12-01T04:00:00.000Z");
+  assert.equal(times.endsAt.toISOString(), "2026-12-01T07:30:00.000Z");
+  assert.equal(times.effortHrs, 3.5);
+  assert.equal(times.blockedUntil.toISOString(), times.endsAt.toISOString());
+  assert.equal(times.confirmBy.toISOString(), "2026-11-29T04:30:00.000Z");
+});
+
+test("booking times: over 9 h, the helper gets an 8 h break", () => {
+  const times = bookingTimes(new Date("2026-12-01T04:30:00Z"), tripFromLegs(LEGS, 480), 480);
+  assert.ok(times.effortHrs > 9);
+  assert.equal(times.blockedUntil.getTime() - times.endsAt.getTime(), 8 * 60 * 60 * 1000);
+});
+
+test("booking times: a round trip is back at base after the drive back to the pickup", () => {
+  // Picked 10:00 India time = 04:30 UTC. Leaves 20 min earlier (09:40 → 09:30),
+  // back after 65 + 60 + 65 + 20 min = 13:30
+  const times = bookingTimes(new Date("2026-12-01T04:30:00Z"), tripFromLegs(ROUND_TRIP_LEGS, 60), 60);
+  assert.equal(times.jobStartsAt.toISOString(), "2026-12-01T04:00:00.000Z");
+  assert.equal(times.endsAt.toISOString(), "2026-12-01T08:00:00.000Z");
+  assert.equal(times.effortHrs, 4);
 });
