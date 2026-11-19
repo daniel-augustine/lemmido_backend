@@ -65,6 +65,8 @@ export const rateKind = pgEnum("rate_kind", [
   "drive_hour", // driving the customer's own vehicle
   "waiting_hour", // driver waiting at the destination
   "service_hour", // companion time with the customer
+  "per_person", // tour packages, per traveller
+  "per_night", // staycations, per night's stay
 ]);
 
 // Where a companion goes with the customer (bookings.companion_purpose)

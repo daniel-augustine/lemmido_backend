@@ -1,0 +1,107 @@
+{
+  "packages": [
+    {
+      "id": "tp_munnar",
+      "slug": "munnar-tea-hills",
+      "title": "Munnar Tea Hills",
+      "summary": "Tea estates, misty viewpoints and Eravikulam park.",
+      "days": 3,
+      "nights": 2,
+      "pricePerPersonInr": 12500,
+      "maxPeople": 12,
+      "image": "/tours/munnar.jpg",
+      "itinerary": [
+        { "day": 1, "title": "Drive up to Munnar", "stops": ["Cheeyappara waterfalls", "Tea estate walk"] },
+        { "day": 2, "title": "Parks and viewpoints", "stops": ["Eravikulam National Park", "Mattupetty Dam", "Echo Point"] },
+        { "day": 3, "title": "Tea museum and return", "stops": ["Tea Museum", "Drop-off"] }
+      ],
+      "inclusions": ["Transport", "2 nights stay", "Breakfast", "Park entry fees"],
+      "exclusions": ["Lunch and dinner", "Personal expenses"]
+    },
+    {
+      "id": "tp_alleppy",
+      "slug": "alleppey-backwaters",
+      "title": "Alleppey Backwaters",
+      "summary": "A night on a houseboat through the canals.",
+      "days": 2,
+      "nights": 1,
+      "pricePerPersonInr": 9000,
+      "maxPeople": 8,
+      "image": "/tours/alleppey.jpg",
+      "itinerary": [
+        { "day": 1, "title": "Board the houseboat", "stops": ["Punnamada Lake", "Village canals"] },
+        { "day": 2, "title": "Morning cruise and return", "stops": ["Sunrise on the lake", "Drop-off"] }
+      ],
+      "inclusions": ["Transport", "Houseboat stay", "All meals on board"],
+      "exclusions": ["Personal expenses"]
+    },
+    {
+      "id": "tp_kochi",
+      "slug": "fort-kochi-heritage",
+      "title": "Fort Kochi Heritage",
+      "summary": "Chinese nets, Jew Town and the old Dutch quarter.",
+      "days": 1,
+      "nights": 0,
+      "pricePerPersonInr": 2500,
+      "maxPeople": 15,
+      "image": "/tours/fort-kochi.jpg",
+      "itinerary": [
+        { "day": 1, "title": "Heritage walk", "stops": ["Chinese fishing nets", "St. Francis Church", "Mattancherry Palace", "Jew Town"] }
+      ],
+      "inclusions": ["Transport", "Guide", "Lunch"],
+      "exclusions": ["Entry fees", "Personal expenses"]
+    },
+    {
+      "id": "tp_wayanad",
+      "slug": "wayanad-wildlife",
+      "title": "Wayanad Wildlife",
+      "summary": "Forest drives, waterfalls and Edakkal caves.",
+      "days": 3,
+      "nights": 2,
+      "pricePerPersonInr": 13500,
+      "maxPeople": 10,
+      "image": "/tours/wayanad.jpg",
+      "itinerary": [
+        { "day": 1, "title": "Arrive in Wayanad", "stops": ["Lakkidi viewpoint", "Pookode Lake"] },
+        { "day": 2, "title": "Caves and forest", "stops": ["Edakkal Caves", "Muthanga forest drive"] },
+        { "day": 3, "title": "Falls and return", "stops": ["Soochipara Falls", "Drop-off"] }
+      ],
+      "inclusions": ["Transport", "2 nights stay", "Breakfast", "Forest drive"],
+      "exclusions": ["Lunch and dinner", "Personal expenses"]
+    },
+    {
+      "id": "tp_varkala",
+      "slug": "varkala-cliffs",
+      "title": "Varkala Cliffs",
+      "summary": "Cliff-top walks and quiet beaches.",
+      "days": 2,
+      "nights": 1,
+      "pricePerPersonInr": 7000,
+      "maxPeople": 10,
+      "image": "/tours/varkala.jpg",
+      "itinerary": [
+        { "day": 1, "title": "Cliff and beach", "stops": ["North Cliff", "Papanasam Beach"] },
+        { "day": 2, "title": "Temple and return", "stops": ["Janardhana Swamy Temple", "Drop-off"] }
+      ],
+      "inclusions": ["Transport", "1 night stay", "Breakfast"],
+      "exclusions": ["Lunch and dinner", "Personal expenses"]
+    },
+    {
+      "id": "tp_periyar",
+      "slug": "thekkady-spice-trail",
+      "title": "Thekkady Spice Trail",
+      "summary": "Spice gardens and a boat ride on Periyar lake.",
+      "days": 2,
+      "nights": 1,
+      "pricePerPersonInr": 8000,
+      "maxPeople": 12,
+      "image": "/tours/thekkady.jpg",
+      "itinerary": [
+        { "day": 1, "title": "Spice country", "stops": ["Spice plantation tour", "Kathakali show"] },
+        { "day": 2, "title": "Periyar lake and return", "stops": ["Periyar boat ride", "Drop-off"] }
+      ],
+      "inclusions": ["Transport", "1 night stay", "Breakfast", "Boat ride"],
+      "exclusions": ["Lunch and dinner", "Personal expenses"]
+    }
+  ]
+}
