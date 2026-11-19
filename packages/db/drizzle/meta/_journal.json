@@ -36,6 +36,13 @@
       "when": 1795045274864,
       "tag": "0004_tour_packages",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795046305280,
+      "tag": "0005_staycations",
+      "breakpoints": true
     }
   ]
 }

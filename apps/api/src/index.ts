@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { pool } from "@lemmido/db";
 import { bookingRoutes } from "./routes/bookings.ts";
+import { staycationRoutes } from "./routes/staycations.ts";
 import { tourPackageRoutes } from "./routes/tour-packages.ts";
 
 const PORT = Number(process.env.API_PORT ?? 8081);
@@ -16,6 +17,7 @@ app.use("*", cors({ origin: WEB_ORIGINS }));
 app.get("/health", (c) => c.text("ok"));
 app.route("/bookings", bookingRoutes);
 app.route("/tour-packages", tourPackageRoutes);
+app.route("/staycations", staycationRoutes);
 
 app.onError((error, c) => {
   console.error(`${c.req.method} ${c.req.path} failed:`, error);
@@ -33,6 +35,7 @@ serve({ fetch: app.fetch, port: PORT }, async (info) => {
   console.log(`  POST ${url}/bookings/trip {serviceId, vehicleSource, from, to, onSiteMinutes}`);
   console.log(`  GET ${url}/bookings/price?serviceId=&vehicleSource=&fromLat=&fromLng=&toLat=&toLng=&onSiteMinutes=`);
   console.log(`  GET ${url}/tour-packages`);
+  console.log(`  GET ${url}/staycations`);
   console.log(`  CORS allowed for: ${WEB_ORIGINS.join(", ")}`);
 
   // Requests still start while the database is down; this only says so up front
