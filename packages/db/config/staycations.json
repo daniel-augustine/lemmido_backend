@@ -1,3 +1,88 @@
 {
-  "staycations": []
+  "staycations": [
+    {
+      "id": "st_kumarak",
+      "slug": "kumarakom-lake-villa",
+      "title": "Kumarakom Lake Villa",
+      "summary": "A quiet villa on Vembanad lake with sunset canoe rides and bird watching.",
+      "location": "Kumarakom",
+      "pricePerNightInr": 6500,
+      "maxGuests": 4,
+      "minNights": 1,
+      "image": "/staycations/kumarakom.jpg",
+      "amenities": ["Lake view", "Air conditioning", "Wi-Fi", "Parking"],
+      "inclusions": ["Breakfast", "Sunset canoe ride"],
+      "exclusions": ["Lunch and dinner", "Transport"]
+    },
+    {
+      "id": "st_vagamon",
+      "slug": "vagamon-pine-cottage",
+      "title": "Vagamon Pine Cottage",
+      "summary": "A wooden cottage near the pine forest and rolling meadows.",
+      "location": "Vagamon",
+      "pricePerNightInr": 4500,
+      "maxGuests": 4,
+      "minNights": 1,
+      "image": "/staycations/vagamon.jpg",
+      "amenities": ["Valley view", "Bonfire area", "Wi-Fi", "Parking"],
+      "inclusions": ["Breakfast", "Guided meadow walk"],
+      "exclusions": ["Lunch and dinner", "Transport"]
+    },
+    {
+      "id": "st_marari",
+      "slug": "marari-beach-house",
+      "title": "Marari Beach House",
+      "summary": "A seaside home in a fishing village, steps from a calm, uncrowded beach.",
+      "location": "Mararikulam",
+      "pricePerNightInr": 8000,
+      "maxGuests": 6,
+      "minNights": 2,
+      "image": "/staycations/marari.jpg",
+      "amenities": ["Beach access", "Air conditioning", "Wi-Fi", "Garden"],
+      "inclusions": ["Breakfast", "Bicycles"],
+      "exclusions": ["Lunch and dinner", "Transport"]
+    },
+    {
+      "id": "st_wayanad",
+      "slug": "wayanad-treehouse",
+      "title": "Wayanad Treehouse",
+      "summary": "A treehouse in a coffee and pepper plantation, surrounded by forest.",
+      "location": "Wayanad",
+      "pricePerNightInr": 7500,
+      "maxGuests": 2,
+      "minNights": 1,
+      "image": "/staycations/wayanad.jpg",
+      "amenities": ["Plantation view", "Hot water", "Parking"],
+      "inclusions": ["Breakfast and dinner", "Plantation walk"],
+      "exclusions": ["Lunch", "Transport", "Safari fees"]
+    },
+    {
+      "id": "st_munnar",
+      "slug": "munnar-tea-bungalow",
+      "title": "Munnar Tea Bungalow",
+      "summary": "A colonial-era bungalow inside a working tea estate, with misty hill views.",
+      "location": "Munnar",
+      "pricePerNightInr": 9000,
+      "maxGuests": 6,
+      "minNights": 2,
+      "image": "/staycations/munnar.jpg",
+      "amenities": ["Hill view", "Fireplace", "Wi-Fi", "Parking", "Caretaker"],
+      "inclusions": ["Breakfast", "Tea factory visit"],
+      "exclusions": ["Lunch and dinner", "Transport"]
+    },
+    {
+      "id": "st_varkala",
+      "slug": "varkala-cliff-stay",
+      "title": "Varkala Cliff Stay",
+      "summary": "Rooms on the north cliff, a short walk down to the beach and cafes.",
+      "location": "Varkala",
+      "pricePerNightInr": 5000,
+      "maxGuests": 3,
+      "minNights": 1,
+      "image": "/staycations/varkala.jpg",
+      "amenities": ["Sea view", "Air conditioning", "Wi-Fi"],
+      "inclusions": ["Breakfast"],
+      "exclusions": ["Lunch and dinner", "Transport", "Ayurveda treatments"]
+    }
+  ]
 }
