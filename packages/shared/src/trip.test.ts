@@ -153,3 +153,12 @@ test("booking times: a round trip is back at base after the drive back to the pi
   assert.equal(times.endsAt.toISOString(), "2026-12-01T08:00:00.000Z");
   assert.equal(times.effortHrs, 4);
 });
+
+test("booking times: a job over several days ends on its last day", () => {
+  // 3 days: the one-day end (13:00 India, 07:30 UTC) moved 2 days on
+  const times = bookingTimes(new Date("2026-12-01T04:30:00Z"), tripFromLegs(LEGS, 60), 60, 3);
+  assert.equal(times.jobStartsAt.toISOString(), "2026-12-01T04:00:00.000Z");
+  assert.equal(times.endsAt.toISOString(), "2026-12-03T07:30:00.000Z");
+  assert.equal(times.effortHrs, 51.5);
+  assert.equal(times.blockedUntil.getTime() - times.endsAt.getTime(), 8 * 60 * 60 * 1000);
+});

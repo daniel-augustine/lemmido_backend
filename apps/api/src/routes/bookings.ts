@@ -10,6 +10,7 @@ import {
   isSlotTime,
   MAX_BOOKINGS_PER_DAY,
   MAX_TASK_MS,
+  MAX_TRIP_DAYS,
   MIN_NOTICE_HOURS,
   quoteBooking,
   roundUpToSlot,
@@ -174,7 +175,9 @@ function parseTripRequest(fields: Record<string, unknown>) {
     return "onSiteMinutes must be a number of minutes, 0 or more";
   }
   if (typeof roundTrip !== "boolean") return "roundTrip must be true or false";
-  if (typeof days !== "number" || !Number.isInteger(days) || days < 1) return "days must be a whole number, 1 or more";
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_TRIP_DAYS) {
+    return `days must be a whole number from 1 to ${MAX_TRIP_DAYS}`;
+  }
   if (typeof serviceId !== "string" || !serviceId) return "serviceId is required";
   return { serviceId, vehicleSource, from, to, onSiteMinutes, roundTrip, days } as const;
 }
@@ -273,22 +276,36 @@ bookingRoutes.get("/price", async (c) => {
   return c.json({ ...quote, currency: CURRENCY });
 });
 
-// Whether a day (YYYY-MM-DD, India time) already has MAX_BOOKINGS_PER_DAY open bookings
-async function isDayFull(day: string) {
-  const { rows } = await db.execute<{ count: number }>(sql`
-    SELECT COUNT(*)::int AS count
-    FROM ${bookings}
+// The YYYY-MM-DD day n days after another
+function addDays(day: string, n: number) {
+  return new Date(parseDay(day)! + n * DAY_MS).toISOString().slice(0, 10);
+}
+
+// The first day from `from` to `to` (YYYY-MM-DD, India time, both included) that
+// already has MAX_BOOKINGS_PER_DAY open bookings, or null when none is full
+async function firstFullDay(from: string, to: string) {
+  const { rows } = await db.execute<{ day: string }>(sql`
+    SELECT to_char(day, 'YYYY-MM-DD') AS day
+    FROM generate_series(${from}::date, ${to}::date, interval '1 day') AS day
+    CROSS JOIN ${bookings}
     WHERE ${inArray(bookings.approvalStatus, [...bookingsAreOpen])}
-      AND ${day}::date BETWEEN (${bookings.dateTime} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
-                           AND (${bookings.endsAt} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+      AND day::date BETWEEN (${bookings.dateTime} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+                        AND (${bookings.endsAt} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+    GROUP BY day
+    HAVING COUNT(*) >= ${MAX_BOOKINGS_PER_DAY}
+    ORDER BY day
+    LIMIT 1
   `);
-  return (rows[0]?.count ?? 0) >= MAX_BOOKINGS_PER_DAY;
+  return rows[0]?.day ?? null;
 }
 
 // POST /bookings   (Authorization: Bearer <token from the web app's /api/rt-token>)
 //   { serviceId, vehicleSource, from: { lat, lng, address }, to: { lat, lng, address },
-//     onSiteMinutes, date: "YYYY-MM-DD", time: "HH:MM", companionPurpose?, description? }
+//     onSiteMinutes, date: "YYYY-MM-DD", time: "HH:MM", roundTrip?, days?, endDate?,
+//     companionPurpose?, description? }
 // → 201 { bookingId, approvalMode, approvalStatus, quoteAmount, currency, payBy, ... }
+// A job over several days sends days and endDate, its last day (date + days − 1).
+// It goes to an admin, and takes a slot on every day from date to endDate.
 // Saves the signed-in customer's booking. The trip and price are worked out again
 // here, never taken from the browser. Path A (auto) waits for payment, and a helper
 // is assigned once it's paid; path B (admin) waits for an admin's quote.
@@ -300,7 +317,7 @@ bookingRoutes.post("/", async (c) => {
   const fields = body ?? {};
   const request = parseTripRequest(fields);
   if (typeof request === "string") return c.json({ error: request }, 400);
-  const { date, time, companionPurpose, description } = fields;
+  const { date, time, endDate, companionPurpose, description } = fields;
   const pickup = (fields.from as Record<string, unknown>).address;
   const destination = (fields.to as Record<string, unknown>).address;
   if (typeof pickup !== "string" || !pickup.trim() || typeof destination !== "string" || !destination.trim()) {
@@ -311,6 +328,14 @@ bookingRoutes.post("/", async (c) => {
   }
   if (typeof time !== "string" || !isSlotTime(time)) {
     return c.json({ error: "time must be HH:MM on the hour or half hour" }, 400);
+  }
+  // The last day has to agree with the number of days, so the two can't disagree
+  const lastDay = addDays(date, request.days - 1);
+  if (request.days > 1 && endDate !== lastDay) {
+    return c.json({ error: `endDate must be ${lastDay}, the last of the ${request.days} days from date` }, 400);
+  }
+  if (request.days === 1 && endDate !== undefined && endDate !== date) {
+    return c.json({ error: "endDate must be the same as date for a one-day booking (or left out)" }, 400);
   }
   if (description !== undefined && typeof description !== "string") {
     return c.json({ error: "description must be text" }, 400);
@@ -336,9 +361,13 @@ bookingRoutes.post("/", async (c) => {
     return c.json({ error: "Only a companion booking has a companionPurpose" }, 400);
   }
 
-  const times = bookingTimes(start, trip, trip.onSiteMinutes);
-  if (await isDayFull(date)) {
-    return c.json({ error: "That day is fully booked. Please pick another day." }, 409);
+  const times = bookingTimes(start, trip, trip.onSiteMinutes, request.days);
+  const fullDay = await firstFullDay(date, lastDay);
+  if (fullDay) {
+    return c.json(
+      { error: request.days > 1 ? `${fullDay} is fully booked. Please pick other days.` : "That day is fully booked. Please pick another day." },
+      409,
+    );
   }
   // Path A: a helper must be free for the whole job, base to base, before the customer
   // pays. This doesn't hold one: payment checks again and assigns them (R8). Path B's

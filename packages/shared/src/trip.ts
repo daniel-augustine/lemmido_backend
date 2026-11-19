@@ -60,6 +60,11 @@ const LONG_JOB_MS = 9 * HOUR_MS;
 const BREAK_AFTER_LONG_JOB_MS = 8 * HOUR_MS;
 // A booking has to be paid this long before it starts (D17)
 const CONFIRM_BEFORE_MS = 48 * HOUR_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+// Longest job, in days. bookings.effort_hrs holds at most 999.9 h, so a span
+// much over 40 days couldn't be saved.
+export const MAX_TRIP_DAYS = 30;
 
 export type BookingTimes = {
   // When the helper leaves base: the picked start less leg 1, on the grid
@@ -77,12 +82,16 @@ export type BookingTimes = {
 // when the helper is at the pickup. They leave base leg 1 earlier, and get back
 // after the time at the destination and every later leg (on a round trip, that
 // includes the drive back to the pickup).
-export function bookingTimes(start: Date, trip: Trip, onSiteMinutes: number): BookingTimes {
+// A job over several days ends on its last day, at the time a one-day job would
+// end (India has no clock changes, so a day is always 24 h). It's a placeholder
+// the admin replaces when scheduling, but it makes the booking take a slot on
+// every day it covers.
+export function bookingTimes(start: Date, trip: Trip, onSiteMinutes: number, days = 1): BookingTimes {
   const [toPickup, ...rest] = trip.legs.map((leg) => leg.durationSeconds * 1000);
   const leave = start.getTime() - toPickup!;
   const back = start.getTime() + rest.reduce((sum, ms) => sum + ms, 0) + onSiteMinutes * MINUTE_MS;
   const jobStartsAt = Math.floor(leave / SLOT_MS) * SLOT_MS;
-  const endsAt = Math.ceil(back / SLOT_MS) * SLOT_MS;
+  const endsAt = Math.ceil(back / SLOT_MS) * SLOT_MS + (days - 1) * DAY_MS;
   const effortMs = endsAt - jobStartsAt;
   return {
     jobStartsAt: new Date(jobStartsAt),
