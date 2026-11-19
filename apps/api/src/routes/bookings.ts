@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { bookings, bookingsAreOpen, db, serviceRates, services } from "@lemmido/db";
+import { bookings, bookingsAreOpen, dashboard, db, serviceRates, services } from "@lemmido/db";
 import {
+  bookingTimes,
   BUSINESS_TIMEZONE,
   isSlotTime,
   MAX_BOOKINGS_PER_DAY,
@@ -13,12 +15,18 @@ import {
   zonedTimeToUtc,
   type Rates,
 } from "@lemmido/shared";
+import { signedInUserId } from "../auth.ts";
 import { fetchTripLegs, type LatLng } from "../google-routes.ts";
 import { findAvailableHelpers, freeStartTimes } from "../helper-availability.ts";
 
 // Longest range one request can ask for: a year, with room for the partial months at each end
 const MAX_RANGE_DAYS = 400;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+// Path A: the customer has this long from submitting to pay (or until confirm_by, if sooner)
+const PAY_WITHIN_MS = 48 * HOUR_MS;
+const COMPANION_PURPOSES = ["hospital", "bank", "office", "other"] as const;
+type CompanionPurpose = (typeof COMPANION_PURPOSES)[number];
 
 // A real calendar day written as YYYY-MM-DD, as a UTC timestamp, or null
 function parseDay(value: string | undefined) {
@@ -201,7 +209,7 @@ async function workOutTrip({ serviceId, vehicleSource, from, to, onSiteMinutes }
     onSiteMinutes,
     rates,
   });
-  return { trip, quote };
+  return { trip, quote, serviceType: service.serviceType };
 }
 
 // POST /bookings/trip
@@ -246,4 +254,141 @@ bookingRoutes.get("/price", async (c) => {
   const { quote } = result;
   if (quote.approvalMode === "admin") return c.json(quote);
   return c.json({ ...quote, currency: CURRENCY });
+});
+
+// Whether a day (YYYY-MM-DD, India time) already has MAX_BOOKINGS_PER_DAY open bookings
+async function isDayFull(day: string) {
+  const { rows } = await db.execute<{ count: number }>(sql`
+    SELECT COUNT(*)::int AS count
+    FROM ${bookings}
+    WHERE ${inArray(bookings.approvalStatus, [...bookingsAreOpen])}
+      AND ${day}::date BETWEEN (${bookings.dateTime} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+                           AND (${bookings.endsAt} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+  `);
+  return (rows[0]?.count ?? 0) >= MAX_BOOKINGS_PER_DAY;
+}
+
+// POST /bookings   (Authorization: Bearer <token from the web app's /api/rt-token>)
+//   { serviceId, vehicleSource, from: { lat, lng, address }, to: { lat, lng, address },
+//     onSiteMinutes, date: "YYYY-MM-DD", time: "HH:MM", companionPurpose?, description? }
+// → 201 { bookingId, approvalMode, approvalStatus, quoteAmount, currency, payBy, ... }
+// Saves the signed-in customer's booking. The trip and price are worked out again
+// here, never taken from the browser. Path A (auto) waits for payment, and a helper
+// is assigned once it's paid; path B (admin) waits for an admin's quote.
+bookingRoutes.post("/", async (c) => {
+  const userId = await signedInUserId(c);
+  if (!userId) return c.json({ error: "Please sign in to book" }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const fields = body ?? {};
+  const request = parseTripRequest(fields);
+  if (typeof request === "string") return c.json({ error: request }, 400);
+  const { date, time, companionPurpose, description } = fields;
+  const pickup = (fields.from as Record<string, unknown>).address;
+  const destination = (fields.to as Record<string, unknown>).address;
+  if (typeof pickup !== "string" || !pickup.trim() || typeof destination !== "string" || !destination.trim()) {
+    return c.json({ error: "from and to need an address" }, 400);
+  }
+  if (typeof date !== "string" || parseDay(date) === null) {
+    return c.json({ error: "date must be a date written as YYYY-MM-DD" }, 400);
+  }
+  if (typeof time !== "string" || !isSlotTime(time)) {
+    return c.json({ error: "time must be HH:MM on the hour or half hour" }, 400);
+  }
+  if (description !== undefined && typeof description !== "string") {
+    return c.json({ error: "description must be text" }, 400);
+  }
+
+  const start = zonedTimeToUtc(date, time, BUSINESS_TIMEZONE);
+  if (start.getTime() - Date.now() < MIN_NOTICE_HOURS * HOUR_MS) {
+    return c.json({ error: `Bookings have to start at least ${MIN_NOTICE_HOURS} hours from now` }, 400);
+  }
+
+  const result = await workOutTrip(request);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+  const { trip, quote, serviceType } = result;
+
+  // Only a companion booking says where the companion goes
+  let purpose: CompanionPurpose | null = null;
+  if (serviceType === "companion") {
+    if (!COMPANION_PURPOSES.includes(companionPurpose as CompanionPurpose)) {
+      return c.json({ error: `companionPurpose must be one of ${COMPANION_PURPOSES.join(", ")}` }, 400);
+    }
+    purpose = companionPurpose as CompanionPurpose;
+  } else if (companionPurpose !== undefined) {
+    return c.json({ error: "Only a companion booking has a companionPurpose" }, 400);
+  }
+
+  const times = bookingTimes(start, trip, request.onSiteMinutes);
+  if (await isDayFull(date)) {
+    return c.json({ error: "That day is fully booked. Please pick another day." }, 409);
+  }
+  // Path A: a helper must be free for the whole job, base to base, before the customer
+  // pays. This doesn't hold one: payment checks again and assigns them (R8). Path B's
+  // helper is picked by the admin when approving.
+  if (quote.approvalMode === "auto") {
+    const helpers = await findAvailableHelpers({ start: times.jobStartsAt, end: times.endsAt });
+    if (helpers.length === 0) {
+      return c.json({ error: "No helper is free for that time any more. Please pick another one." }, 409);
+    }
+  }
+
+  const auto = quote.approvalMode === "auto";
+  const bookingId = `bk_${randomBytes(8).toString("hex")}`;
+  const payBy = auto ? new Date(Math.min(Date.now() + PAY_WITHIN_MS, times.confirmBy.getTime())) : null;
+
+  await db.transaction(async (tx) => {
+    await tx.insert(bookings).values({
+      bookingId,
+      userId,
+      serviceId: request.serviceId,
+      companionPurpose: purpose,
+      vehicleSource: request.vehicleSource,
+      description: typeof description === "string" && description.trim() ? description.trim() : null,
+      pickup: pickup.trim(),
+      destination: destination.trim(),
+      dateTime: start,
+      // The driver's waiting time or the companion's service time
+      serviceHrs: (request.onSiteMinutes / 60).toFixed(1),
+      jobStartsAt: times.jobStartsAt,
+      endsAt: times.endsAt,
+      plannedEndsAt: times.endsAt,
+      effortHrs: times.effortHrs.toFixed(1),
+      blockedUntil: times.blockedUntil,
+      // Path B: the admin sets the price, and this rate, with the quote
+      overrunRate: auto ? quote.overrunRate : 0,
+      approvalMode: quote.approvalMode,
+      approvalStatus: auto ? "awaiting_payment" : "pending_approval",
+      quoteAmount: auto ? quote.amount : null,
+      currency: CURRENCY,
+      confirmBy: times.confirmBy,
+      payBy,
+      paymentStatus: "unpaid",
+    });
+    await tx.insert(dashboard).values({
+      dashId: `dash_${bookingId}`,
+      userId,
+      bookingId,
+      // Path A is approved by the backend on submit; path B waits for an admin
+      bookAccept: auto,
+      helperAccept: false,
+      section: "pending",
+    });
+  });
+
+  return c.json(
+    {
+      bookingId,
+      approvalMode: quote.approvalMode,
+      approvalStatus: auto ? "awaiting_payment" : "pending_approval",
+      quoteAmount: auto ? quote.amount : null,
+      currency: CURRENCY,
+      payBy,
+      dateTime: start,
+      jobStartsAt: times.jobStartsAt,
+      endsAt: times.endsAt,
+      ...(auto ? {} : { reason: quote.reason }),
+    },
+    201,
+  );
 });
