@@ -1,5 +1,5 @@
 {
-  "id": "2484cc0f-676c-4e2c-aff6-f5cc808948d0",
+  "id": "8d505b34-04ea-4301-b8af-de3593f9be9c",
   "prevId": "b83086b8-a08a-45a2-bcb5-cdff3be06905",
   "version": "7",
   "dialect": "postgresql",
@@ -563,6 +563,142 @@
       },
       "isRLSEnabled": false
     },
+    "public.tour_packages": {
+      "name": "tour_packages",
+      "schema": "",
+      "columns": {
+        "service_id": {
+          "name": "service_id",
+          "type": "varchar(10)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(60)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "days": {
+          "name": "days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nights": {
+          "name": "nights",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_people": {
+          "name": "max_people",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "itinerary": {
+          "name": "itinerary",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inclusions": {
+          "name": "inclusions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exclusions": {
+          "name": "exclusions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {
+        "tour_packages_active_slug": {
+          "name": "tour_packages_active_slug",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"tour_packages\".\"active\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tour_packages_service_id_services_service_id_fk": {
+          "name": "tour_packages_service_id_services_service_id_fk",
+          "tableFrom": "tour_packages",
+          "tableTo": "services",
+          "columnsFrom": [
+            "service_id"
+          ],
+          "columnsTo": [
+            "service_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "tour_packages_days_positive": {
+          "name": "tour_packages_days_positive",
+          "value": "\"tour_packages\".\"days\" >= 1"
+        },
+        "tour_packages_nights_valid": {
+          "name": "tour_packages_nights_valid",
+          "value": "\"tour_packages\".\"nights\" >= 0 AND \"tour_packages\".\"nights\" < \"tour_packages\".\"days\""
+        },
+        "tour_packages_max_people_positive": {
+          "name": "tour_packages_max_people_positive",
+          "value": "\"tour_packages\".\"max_people\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.bookings": {
       "name": "bookings",
       "schema": "",
@@ -589,19 +725,6 @@
           "name": "companion_purpose",
           "type": "companion_purpose",
           "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "vehicle_source": {
-          "name": "vehicle_source",
-          "type": "vehicle_source",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -1320,15 +1443,8 @@
         "per_km",
         "drive_hour",
         "waiting_hour",
-        "service_hour"
-      ]
-    },
-    "public.vehicle_source": {
-      "name": "vehicle_source",
-      "schema": "public",
-      "values": [
-        "ours",
-        "customer"
+        "service_hour",
+        "per_person"
       ]
     },
     "public.role": {

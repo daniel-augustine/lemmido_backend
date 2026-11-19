@@ -10,6 +10,8 @@ user/db `lemmido`, password `lemmido_dev`.
     pnpm install
     pnpm db:migrate             # create the tables
     pnpm db:seed                # example services and users
+    pnpm db:sync-tours          # tour packages from packages/db/config/tour-packages.json
+    pnpm db:sync-staycations    # staycations from packages/db/config/staycations.json
 
     docker compose logs -f      # tail logs
     docker compose down         # stop it (keeps data)
@@ -22,6 +24,24 @@ user/db `lemmido`, password `lemmido_dev`.
 If you had the old `lemmido-postgres` container, remove it and its data once:
 
     docker rm -f lemmido-postgres && docker volume rm lemmido_backend_pgdata
+
+## Tour packages and staycations
+
+Both are edited in JSON files, never in the database. After changing a file, run its command
+(add `--dry-run` first to check the file and list what would be added, updated or hidden):
+
+| Config file | Command | Price field |
+|---|---|---|
+| `packages/db/config/tour-packages.json` | `pnpm db:sync-tours` | `pricePerPersonInr` (a `per_person` rate) |
+| `packages/db/config/staycations.json` | `pnpm db:sync-staycations` | `pricePerNightInr` (a `per_night` rate) |
+
+- `id` is the entry's `services.service_id`: `tp_` (tours) or `st_` (staycations) plus up to 7
+  characters. Don't rename it once bookings exist; a renamed id is a new entry and the old one is hidden.
+- Prices are in whole rupees; they're stored in paise in `service_rates`.
+- An entry removed from the file is hidden (`active = false`), not deleted, because bookings may
+  point at it. Putting it back in the file shows it again.
+- The order in the file is the order on the page.
+- The web app reads them from `GET /tour-packages` and `GET /staycations`.
 
 ## Services
 
