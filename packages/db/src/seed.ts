@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { db } from "./client.ts";
-import { serviceRates, services, users } from "./schema/index.ts";
+import { services, users } from "./schema/index.ts";
 
 // Example rows from datamodel.md, plus a few users so the
 // availability queries have helpers to work with. Safe to re-run.
@@ -30,19 +30,7 @@ async function seed() {
     ])
     .onConflictDoNothing();
 
-  // In paise: ₹25/km in our vehicle, ₹100/h driving the customer's vehicle,
-  // ₹20/h driver waiting, ₹100/h companion time
-  await db
-    .insert(serviceRates)
-    .values([
-      { serviceId: "ser_01", kind: "per_km", currency: "INR", amount: 2500 },
-      { serviceId: "ser_01", kind: "drive_hour", currency: "INR", amount: 10000 },
-      { serviceId: "ser_01", kind: "waiting_hour", currency: "INR", amount: 2000 },
-      { serviceId: "ser_03", kind: "per_km", currency: "INR", amount: 2500 },
-      { serviceId: "ser_03", kind: "drive_hour", currency: "INR", amount: 10000 },
-      { serviceId: "ser_03", kind: "service_hour", currency: "INR", amount: 10000 },
-    ])
-    .onConflictDoNothing();
+  // Driver and companion rates come from config/service-rates.json (pnpm db:sync-rates)
 
   await db
     .insert(users)

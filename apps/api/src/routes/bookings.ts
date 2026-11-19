@@ -3,6 +3,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { bookings, bookingsAreOpen, db, serviceRates, services } from "@lemmido/db";
 import {
   BUSINESS_TIMEZONE,
+  hasOnSiteTime,
+  isRoundTrip,
   isSlotTime,
   MAX_BOOKINGS_PER_DAY,
   MAX_TASK_MS,
@@ -152,8 +154,10 @@ bookingRoutes.post("/check-availability", async (c) => {
 
 // The details a trip and its price are worked out from, or an error message.
 // onSiteMinutes is the driver's waiting time or the companion's service time.
+// roundTrip (default false) asks a driver in our vehicle to bring the customer back
+// to the pickup; days (default 1) is how many days the job runs over.
 function parseTripRequest(fields: Record<string, unknown>) {
-  const { serviceId, vehicleSource, onSiteMinutes } = fields;
+  const { serviceId, vehicleSource, onSiteMinutes, roundTrip = false, days = 1 } = fields;
   const from = parseLatLng(fields.from);
   const to = parseLatLng(fields.to);
   if (!from || !to) return "from and to must be { lat, lng }";
@@ -161,25 +165,32 @@ function parseTripRequest(fields: Record<string, unknown>) {
   if (typeof onSiteMinutes !== "number" || !Number.isFinite(onSiteMinutes) || onSiteMinutes < 0) {
     return "onSiteMinutes must be a number of minutes, 0 or more";
   }
+  if (typeof roundTrip !== "boolean") return "roundTrip must be true or false";
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 1) return "days must be a whole number, 1 or more";
   if (typeof serviceId !== "string" || !serviceId) return "serviceId is required";
-  return { serviceId, vehicleSource, from, to, onSiteMinutes } as const;
+  return { serviceId, vehicleSource, from, to, onSiteMinutes, roundTrip, days } as const;
 }
 
 type TripRequest = Exclude<ReturnType<typeof parseTripRequest>, string>;
 
-// The job's three legs (Base → From → To → Base) from Google, and whether it's
-// auto-approved (path A) with its price, or goes to an admin (path B). An error
-// message and HTTP status when the service doesn't exist or no route is found.
-async function workOutTrip({ serviceId, vehicleSource, from, to, onSiteMinutes }: TripRequest) {
+// The job's legs from Google (Base → From → To → Base, with To → From before the
+// last leg on a round trip), and whether it's auto-approved (path A) with its price,
+// or goes to an admin (path B). An error message and HTTP status when the service
+// doesn't exist or no route is found.
+async function workOutTrip({ serviceId, vehicleSource, from, to, roundTrip, days, ...request }: TripRequest) {
   const [service] = await db
     .select({ serviceType: services.serviceType, autoPriced: services.autoPriced })
     .from(services)
     .where(eq(services.serviceId, serviceId));
   if (!service) return { error: `No service ${serviceId}`, status: 400 as const };
 
+  // A one-way driver doesn't wait, so any waiting time sent is ignored
+  const isRound = isRoundTrip(service.serviceType, vehicleSource, roundTrip);
+  const onSiteMinutes = hasOnSiteTime(service.serviceType, isRound) ? request.onSiteMinutes : 0;
+
   let legs;
   try {
-    legs = await fetchTripLegs(from, to);
+    legs = await fetchTripLegs(from, to, isRound);
   } catch (error) {
     console.error("Couldn't work out the route:", error);
     return { error: "Couldn't work out the route. Please try again.", status: 502 as const };
@@ -195,20 +206,24 @@ async function workOutTrip({ serviceId, vehicleSource, from, to, onSiteMinutes }
   const quote = quoteBooking({
     serviceType: service.serviceType,
     autoPriced: service.autoPriced,
+    days,
     vehicleSource,
     distanceKm: trip.distanceKm,
     driveMinutes: trip.driveMinutes,
     onSiteMinutes,
     rates,
   });
-  return { trip, quote };
+  return { trip: { ...trip, roundTrip: isRound, onSiteMinutes }, quote };
 }
 
 // POST /bookings/trip
 //   { serviceId: "ser_01", vehicleSource: "ours" | "customer",
-//     from: { lat, lng }, to: { lat, lng }, onSiteMinutes: 60 }
-// → { legs, distanceKm, driveMinutes, leaveBaseMinutes, taskMinutes, currency, quote }
+//     from: { lat, lng }, to: { lat, lng }, onSiteMinutes: 60, roundTrip?: true, days?: 1 }
+// → { legs, distanceKm, driveMinutes, leaveBaseMinutes, taskMinutes, roundTrip,
+//     onSiteMinutes, currency, quote }
 // The job's legs, the task length to check availability for, and the quote.
+// roundTrip and onSiteMinutes say what was actually priced: a driver in the
+// customer's vehicle is always a round trip, and a one-way driver doesn't wait.
 // A quote with approvalMode "admin" means an admin prices it.
 bookingRoutes.post("/trip", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -221,12 +236,12 @@ bookingRoutes.post("/trip", async (c) => {
 });
 
 // GET /bookings/price?serviceId=ser_01&vehicleSource=ours&fromLat=9.31&fromLng=76.61
-//                    &toLat=9.59&toLng=76.52&onSiteMinutes=60
+//                    &toLat=9.59&toLng=76.52&onSiteMinutes=60&roundTrip=true&days=1
 // → { approvalMode: "auto", currency: "INR", amount: 194500, travelAmount, onSiteAmount,
 //     billedKm, billedDriveHrs, billedOnSiteHrs, overrunRate }   (amounts in paise)
 //   or { approvalMode: "admin", reason }: not auto-approved, so an admin sends the price.
 // The price of an auto-approved booking (path A), checked by quoteBooking: an
-// auto-priced service, 9 h or less base to base, and every rate it needs.
+// auto-priced service, one day, 9 h or less base to base, and every rate it needs.
 bookingRoutes.get("/price", async (c) => {
   const number = (name: string) => {
     const value = c.req.query(name);
@@ -238,6 +253,8 @@ bookingRoutes.get("/price", async (c) => {
     from: { lat: number("fromLat"), lng: number("fromLng") },
     to: { lat: number("toLat"), lng: number("toLng") },
     onSiteMinutes: number("onSiteMinutes"),
+    roundTrip: c.req.query("roundTrip") === undefined ? undefined : c.req.query("roundTrip") === "true",
+    days: number("days"),
   });
   if (typeof request === "string") return c.json({ error: request }, 400);
 

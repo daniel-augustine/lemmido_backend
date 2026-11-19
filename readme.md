@@ -10,6 +10,7 @@ user/db `lemmido`, password `lemmido_dev`.
     pnpm install
     pnpm db:migrate             # create the tables
     pnpm db:seed                # example services and users
+    pnpm db:sync-rates          # driver and companion rates from packages/db/config/service-rates.json
     pnpm db:sync-tours          # tour packages from packages/db/config/tour-packages.json
     pnpm db:sync-staycations    # staycations from packages/db/config/staycations.json
 
@@ -24,6 +25,25 @@ user/db `lemmido`, password `lemmido_dev`.
 If you had the old `lemmido-postgres` container, remove it and its data once:
 
     docker rm -f lemmido-postgres && docker volume rm lemmido_backend_pgdata
+
+## Driver and companion rates
+
+The per km and per hour rates are edited in `packages/db/config/service-rates.json`, never in the
+database. After changing it, run `pnpm db:sync-rates` (add `--dry-run` first to check the file and
+list what would be added, changed or deleted).
+
+| Rate | Charged for |
+|---|---|
+| `per_km` | every km driven in our vehicle, base to base |
+| `drive_hour` | every hour driving the customer's vehicle, base to base |
+| `waiting_hour` | the driver waiting at the destination (round trips only) |
+| `service_hour` | the companion's time with the customer |
+
+- `id` is the `services.service_id` and `service` its `service_type`; both must match a service
+  that already exists (`pnpm db:seed`).
+- Rates are in whole rupees per km or per hour; they're stored in paise in `service_rates`.
+- A rate removed from the file is deleted. A service missing a rate it needs is priced by an admin.
+- Extra time when a job runs over is charged at the waiting or service hour rate.
 
 ## Tour packages and staycations
 

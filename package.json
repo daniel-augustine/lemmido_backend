@@ -13,6 +13,7 @@
     "db:seed": "pnpm --filter @lemmido/db seed",
     "db:sync-tours": "pnpm --filter @lemmido/db sync-tours",
     "db:sync-staycations": "pnpm --filter @lemmido/db sync-staycations",
+    "db:sync-rates": "pnpm --filter @lemmido/db sync-rates",
     "db:studio": "pnpm --filter @lemmido/db studio",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

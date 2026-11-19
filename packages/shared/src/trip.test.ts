@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { priceBooking } from "./pricing.ts";
-import { tripFromLegs } from "./trip.ts";
+import { hasOnSiteTime, isRoundTrip, tripFromLegs } from "./trip.ts";
 
 // Thiruvalla base → Chengannur (pickup) → Kottayam → back to Thiruvalla
 const LEGS = [
@@ -18,8 +18,46 @@ test("adds up all three legs", () => {
   assert.equal(trip.taskMinutes, 192);
 });
 
-test("needs exactly three legs", () => {
+// Round trip: … → Kottayam → back to Chengannur → Thiruvalla
+const ROUND_TRIP_LEGS = [
+  LEGS[0]!,
+  LEGS[1]!,
+  { distanceMeters: 38_500, durationSeconds: 65 * 60 },
+  { distanceMeters: 11_200, durationSeconds: 20 * 60 },
+];
+
+test("adds up all four legs of a round trip", () => {
+  const trip = tripFromLegs(ROUND_TRIP_LEGS, 60);
+  assert.equal(trip.distanceKm, 99.4);
+  assert.equal(trip.driveMinutes, 170);
+  assert.equal(trip.leaveBaseMinutes, 20);
+  assert.equal(trip.taskMinutes, 230);
+});
+
+test("needs three or four legs", () => {
   assert.throws(() => tripFromLegs(LEGS.slice(0, 2), 0));
+  assert.throws(() => tripFromLegs([...ROUND_TRIP_LEGS, LEGS[0]!], 0));
+});
+
+test("a driver in the customer's vehicle always makes a round trip", () => {
+  assert.equal(isRoundTrip("driver", "customer", false), true);
+  assert.equal(isRoundTrip("driver", "customer", true), true);
+});
+
+test("a driver in our vehicle makes a round trip only when it's booked", () => {
+  assert.equal(isRoundTrip("driver", "ours", false), false);
+  assert.equal(isRoundTrip("driver", "ours", true), true);
+});
+
+test("a companion's trip has no return leg", () => {
+  assert.equal(isRoundTrip("companion", "ours", true), false);
+  assert.equal(isRoundTrip("companion", "customer", false), false);
+});
+
+test("a one-way driver doesn't wait; a round-trip driver and a companion do", () => {
+  assert.equal(hasOnSiteTime("driver", false), false);
+  assert.equal(hasOnSiteTime("driver", true), true);
+  assert.equal(hasOnSiteTime("companion", false), true);
 });
 
 test("customer's vehicle: every leg's drive time, rounded once, at the drive hour rate", () => {
@@ -54,4 +92,38 @@ test("our vehicle: every leg's km at the per km rate", () => {
   if (quote.approvalMode !== "auto") return;
   assert.equal(quote.billedKm, 77);
   assert.equal(quote.amount, 192500);
+});
+
+test("our vehicle, round trip: all four legs' km plus waiting", () => {
+  // 99.4 km → 100 km × ₹25 = ₹2500; 60 min waiting → 1 h × ₹20 = ₹20
+  const trip = tripFromLegs(ROUND_TRIP_LEGS, 60);
+  const quote = priceBooking({
+    serviceType: "driver",
+    vehicleSource: "ours",
+    distanceKm: trip.distanceKm,
+    driveMinutes: trip.driveMinutes,
+    onSiteMinutes: 60,
+    rates: { per_km: 2500, drive_hour: 10000, waiting_hour: 2000 },
+  });
+  assert.equal(quote.approvalMode, "auto");
+  if (quote.approvalMode !== "auto") return;
+  assert.equal(quote.billedKm, 100);
+  assert.equal(quote.amount, 252000);
+});
+
+test("customer's vehicle, round trip: all four legs' drive time plus waiting", () => {
+  // 170 min of driving → 3 h × ₹100 = ₹300; 60 min waiting → 1 h × ₹20 = ₹20
+  const trip = tripFromLegs(ROUND_TRIP_LEGS, 60);
+  const quote = priceBooking({
+    serviceType: "driver",
+    vehicleSource: "customer",
+    distanceKm: trip.distanceKm,
+    driveMinutes: trip.driveMinutes,
+    onSiteMinutes: 60,
+    rates: { per_km: 2500, drive_hour: 10000, waiting_hour: 2000 },
+  });
+  assert.equal(quote.approvalMode, "auto");
+  if (quote.approvalMode !== "auto") return;
+  assert.equal(quote.billedDriveHrs, 3);
+  assert.equal(quote.amount, 32000);
 });
