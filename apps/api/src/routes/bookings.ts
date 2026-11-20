@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { bookings, bookingsAreOpen, dashboard, db, serviceRates, services } from "@lemmido/db";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { bookings, bookingsAreOpen, dashboard, db, serviceRates, services, users } from "@lemmido/db";
 import {
   bookingTimes,
   BUSINESS_TIMEZONE,
@@ -18,7 +18,7 @@ import {
   zonedTimeToUtc,
   type Rates,
 } from "@lemmido/shared";
-import { signedInUserId } from "../auth.ts";
+import { signedInUserId, trackingToken } from "../auth.ts";
 import { fetchTripLegs, type LatLng } from "../google-routes.ts";
 import { findAvailableHelpers, freeStartTimes } from "../helper-availability.ts";
 
@@ -298,6 +298,113 @@ async function firstFullDay(from: string, to: string) {
   `);
   return rows[0]?.day ?? null;
 }
+
+// GET /bookings/mine   (Authorization: Bearer <token from the web app's /api/rt-token>)
+// → { bookings: [{ bookingId, serviceType, pickup, destination, dateTime, endsAt, ... }] }
+// The signed-in customer's own bookings for their dashboard, latest start first.
+// Amounts are minor units (paise for INR).
+const MY_BOOKINGS_LIMIT = 100;
+
+bookingRoutes.get("/mine", async (c) => {
+  const userId = await signedInUserId(c);
+  if (!userId) return c.json({ error: "Please sign in to see your bookings" }, 401);
+
+  const rows = await db
+    .select({
+      bookingId: bookings.bookingId,
+      serviceType: services.serviceType,
+      companionPurpose: bookings.companionPurpose,
+      vehicleSource: bookings.vehicleSource,
+      pickup: bookings.pickup,
+      destination: bookings.destination,
+      dateTime: bookings.dateTime,
+      endsAt: bookings.endsAt,
+      serviceHrs: bookings.serviceHrs,
+      approvalMode: bookings.approvalMode,
+      approvalStatus: bookings.approvalStatus,
+      quoteAmount: bookings.quoteAmount,
+      currency: bookings.currency,
+      payBy: bookings.payBy,
+      paymentStatus: bookings.paymentStatus,
+      jobStatus: bookings.jobStatus,
+      helperAssigned: sql<boolean>`${bookings.helperId} is not null`,
+      denialReason: bookings.denialReason,
+      createdAt: bookings.createdAt,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(services.serviceId, bookings.serviceId))
+    .where(eq(bookings.userId, userId))
+    .orderBy(desc(bookings.dateTime))
+    .limit(MY_BOOKINGS_LIMIT);
+
+  return c.json({ bookings: rows });
+});
+
+// Statuses where a booking won't go ahead, so there's nothing to track
+const CLOSED_STATUSES = ["denied", "declined", "expired", "cancelled"];
+
+// GET /bookings/mine/:bookingId   (Authorization: Bearer <token from the web app's /api/rt-token>)
+// → { booking: {...}, helper: { name, phoneNumber } | null, tracking: { token } | null }
+// One of the signed-in customer's bookings, with everything the booking page shows.
+// tracking.token lets the realtime service (apps/realtime) send them the helper's live
+// location; it's only given while a helper is assigned and the job isn't over.
+bookingRoutes.get("/mine/:bookingId", async (c) => {
+  const userId = await signedInUserId(c);
+  if (!userId) return c.json({ error: "Please sign in to see your bookings" }, 401);
+
+  const [row] = await db
+    .select({
+      booking: {
+        bookingId: bookings.bookingId,
+        serviceType: services.serviceType,
+        companionPurpose: bookings.companionPurpose,
+        vehicleSource: bookings.vehicleSource,
+        description: bookings.description,
+        pickup: bookings.pickup,
+        destination: bookings.destination,
+        dateTime: bookings.dateTime,
+        jobStartsAt: bookings.jobStartsAt,
+        endsAt: bookings.endsAt,
+        serviceHrs: bookings.serviceHrs,
+        effortHrs: bookings.effortHrs,
+        jobStatus: bookings.jobStatus,
+        expectedEndAt: bookings.expectedEndAt,
+        completedAt: bookings.completedAt,
+        overrunRate: bookings.overrunRate,
+        overrunHrs: bookings.overrunHrs,
+        overrunAmount: bookings.overrunAmount,
+        overrunStatus: bookings.overrunStatus,
+        approvalMode: bookings.approvalMode,
+        approvalStatus: bookings.approvalStatus,
+        quoteAmount: bookings.quoteAmount,
+        currency: bookings.currency,
+        payBy: bookings.payBy,
+        paymentStatus: bookings.paymentStatus,
+        denialReason: bookings.denialReason,
+        cancellationReason: bookings.cancellationReason,
+        createdAt: bookings.createdAt,
+      },
+      helperId: bookings.helperId,
+      helperName: users.name,
+      helperPhone: users.phoneNumber,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(services.serviceId, bookings.serviceId))
+    .leftJoin(users, eq(users.id, bookings.helperId))
+    // Someone else's booking id answers like a missing one
+    .where(and(eq(bookings.bookingId, c.req.param("bookingId")), eq(bookings.userId, userId)))
+    .limit(1);
+  if (!row) return c.json({ error: "Booking not found" }, 404);
+
+  const { booking, helperId, helperName, helperPhone } = row;
+  const trackable =
+    helperId !== null && booking.jobStatus !== "completed" && !CLOSED_STATUSES.includes(booking.approvalStatus);
+  return c.json({
+    booking,
+    helper: helperId ? { name: helperName, phoneNumber: helperPhone } : null,
+    tracking: trackable ? { token: await trackingToken(userId, helperId, booking.bookingId) } : null,
+  });
+});
 
 // POST /bookings   (Authorization: Bearer <token from the web app's /api/rt-token>)
 //   { serviceId, vehicleSource, from: { lat, lng, address }, to: { lat, lng, address },

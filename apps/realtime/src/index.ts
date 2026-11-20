@@ -16,6 +16,21 @@ const locationMessage = z.object({
   timestamp: z.number(),
 });
 
+type Location = z.infer<typeof locationMessage>;
+
+// Who is on the other end of a connection: someone sharing their own location (a helper
+// on a job), or a customer watching one helper's location for their booking
+type Connection = { userId: string; watching: string | null };
+
+// Each sharer's latest location, so a viewer who joins sees it straight away, and the
+// viewers of each sharer. In memory, so one instance only: Redis is the next step.
+const lastLocation = new Map<string, Location>();
+const viewersOf = new Map<string, Set<WebSocket>>();
+
+function send(ws: WebSocket, message: unknown) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+}
+
 // Plain HTTP server, so we can answer a /health check
 const server = createServer((req, res) => {
   if (req.url === "/health") {
@@ -35,10 +50,15 @@ server.on("upgrade", async (req, socket, head) => {
     if (!token) throw new Error("missing token");
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userId = String(payload.sub);
+    // A tracking token from the API (GET /bookings/mine/:id) names the helper the
+    // customer may watch; an ordinary sign-in token shares the user's own location
+    const connection: Connection = {
+      userId: String(payload.sub),
+      watching: typeof payload.watch === "string" && payload.watch ? payload.watch : null,
+    };
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req, userId);
+      wss.emit("connection", ws, req, connection);
     });
   } catch {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
@@ -46,16 +66,31 @@ server.on("upgrade", async (req, socket, head) => {
   }
 });
 
-wss.on("connection", (ws: WebSocket, _req: IncomingMessage, userId: string) => {
+wss.on("connection", (ws: WebSocket, _req: IncomingMessage, { userId, watching }: Connection) => {
+  if (watching) {
+    // A viewer only receives: the helper's last known location now, then each update
+    console.log(`viewer ${userId} watching ${watching}`);
+    let viewers = viewersOf.get(watching);
+    if (!viewers) viewersOf.set(watching, (viewers = new Set()));
+    viewers.add(ws);
+    const last = lastLocation.get(watching);
+    if (last) send(ws, last);
+    ws.on("close", () => {
+      viewers.delete(ws);
+      if (viewers.size === 0) viewersOf.delete(watching);
+    });
+    return;
+  }
+
   console.log(`connected: ${userId}`);
 
   ws.on("message", (data) => {
     try {
       const msg = locationMessage.parse(JSON.parse(data.toString()));
-      console.log(`location from ${userId}:`, msg.lat, msg.lng);
-      // Next step: write to Redis and publish to viewers
+      lastLocation.set(userId, msg);
+      for (const viewer of viewersOf.get(userId) ?? []) send(viewer, msg);
     } catch {
-      ws.send(JSON.stringify({ type: "error", message: "invalid message" }));
+      send(ws, { type: "error", message: "invalid message" });
     }
   });
 

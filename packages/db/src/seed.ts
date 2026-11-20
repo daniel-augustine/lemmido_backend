@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { sql } from "drizzle-orm";
 import { db } from "./client.ts";
 import { services, users } from "./schema/index.ts";
 
@@ -28,7 +29,9 @@ async function seed() {
         autoPriced: false,
       },
     ])
-    .onConflictDoNothing();
+    // Re-running keeps whether each service is auto-priced in line with this file, so a
+    // service seeded before it was switched to auto-pricing doesn't stay admin-priced
+    .onConflictDoUpdate({ target: services.serviceId, set: { autoPriced: sql`excluded.auto_priced` } });
 
   // Driver and companion rates come from config/service-rates.json (pnpm db:sync-rates)
 
