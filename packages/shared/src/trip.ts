@@ -1,5 +1,9 @@
-// A job's trip: Base → From → To → Base. The helper leaves our base, drives to the
-// pickup, on to the destination, and back to base, so every leg is part of the job.
+// A job's trip. The helper leaves our base, drives to the pickup and on to the
+// destination, then either straight back to base (Base → From → To → Base) or, on a
+// round trip, back to the pickup first (Base → From → To → From → Base). Every leg
+// is part of the job.
+
+import type { VehicleSource } from "./pricing.ts";
 
 // One driving leg, as the route lookup returns it
 export type Leg = { distanceMeters: number; durationSeconds: number };
@@ -16,10 +20,25 @@ export type Trip = {
   taskMinutes: number;
 };
 
-// The trip for the three legs of a job and the time spent at the destination
-// (the driver's waiting time or the companion's service time)
+// Whether the helper brings the customer back to the pickup. A driver in the
+// customer's vehicle always does (the car goes home); in our vehicle only when the
+// customer books the return. A companion's trip has no return leg.
+export function isRoundTrip(serviceType: string, vehicleSource: VehicleSource, roundTrip: boolean) {
+  return serviceType === "driver" && (vehicleSource === "customer" || roundTrip);
+}
+
+// Whether the time at the destination is charged and counted. A one-way driver
+// drops the customer off and leaves, so there's no waiting.
+export function hasOnSiteTime(serviceType: string, roundTrip: boolean) {
+  return serviceType !== "driver" || roundTrip;
+}
+
+// The trip for a job's legs (3 one way, 4 on a round trip) and the time spent at
+// the destination (the driver's waiting time or the companion's service time)
 export function tripFromLegs(legs: Leg[], onSiteMinutes: number): Trip {
-  if (legs.length !== 3) throw new Error(`A trip has 3 legs (base → from → to → base), got ${legs.length}`);
+  if (legs.length !== 3 && legs.length !== 4) {
+    throw new Error(`A trip has 3 legs (base → from → to → base) or 4 (… → to → from → base), got ${legs.length}`);
+  }
   const distanceKm = legs.reduce((sum, leg) => sum + leg.distanceMeters, 0) / 1000;
   const driveMinutes = legs.reduce((sum, leg) => sum + leg.durationSeconds, 0) / 60;
   return {
@@ -41,6 +60,11 @@ const LONG_JOB_MS = 9 * HOUR_MS;
 const BREAK_AFTER_LONG_JOB_MS = 8 * HOUR_MS;
 // A booking has to be paid this long before it starts (D17)
 const CONFIRM_BEFORE_MS = 48 * HOUR_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+// Longest job, in days. bookings.effort_hrs holds at most 999.9 h, so a span
+// much over 40 days couldn't be saved.
+export const MAX_TRIP_DAYS = 30;
 
 export type BookingTimes = {
   // When the helper leaves base: the picked start less leg 1, on the grid
@@ -56,13 +80,18 @@ export type BookingTimes = {
 
 // The times a booking is saved with. `start` is the time the customer picked:
 // when the helper is at the pickup. They leave base leg 1 earlier, and get back
-// after leg 2, the time at the destination, and leg 3.
-export function bookingTimes(start: Date, trip: Trip, onSiteMinutes: number): BookingTimes {
-  const [toPickup, toDestination, toBase] = trip.legs.map((leg) => leg.durationSeconds * 1000);
+// after the time at the destination and every later leg (on a round trip, that
+// includes the drive back to the pickup).
+// A job over several days ends on its last day, at the time a one-day job would
+// end (India has no clock changes, so a day is always 24 h). It's a placeholder
+// the admin replaces when scheduling, but it makes the booking take a slot on
+// every day it covers.
+export function bookingTimes(start: Date, trip: Trip, onSiteMinutes: number, days = 1): BookingTimes {
+  const [toPickup, ...rest] = trip.legs.map((leg) => leg.durationSeconds * 1000);
   const leave = start.getTime() - toPickup!;
-  const back = start.getTime() + toDestination! + onSiteMinutes * MINUTE_MS + toBase!;
+  const back = start.getTime() + rest.reduce((sum, ms) => sum + ms, 0) + onSiteMinutes * MINUTE_MS;
   const jobStartsAt = Math.floor(leave / SLOT_MS) * SLOT_MS;
-  const endsAt = Math.ceil(back / SLOT_MS) * SLOT_MS;
+  const endsAt = Math.ceil(back / SLOT_MS) * SLOT_MS + (days - 1) * DAY_MS;
   const effortMs = endsAt - jobStartsAt;
   return {
     jobStartsAt: new Date(jobStartsAt),

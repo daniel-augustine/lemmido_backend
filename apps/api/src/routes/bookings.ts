@@ -1,13 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { bookings, bookingsAreOpen, dashboard, db, serviceRates, services } from "@lemmido/db";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { bookings, bookingsAreOpen, dashboard, db, serviceRates, services, users } from "@lemmido/db";
 import {
   bookingTimes,
   BUSINESS_TIMEZONE,
+  hasOnSiteTime,
+  isRoundTrip,
   isSlotTime,
   MAX_BOOKINGS_PER_DAY,
   MAX_TASK_MS,
+  MAX_TRIP_DAYS,
   MIN_NOTICE_HOURS,
   quoteBooking,
   roundUpToSlot,
@@ -15,7 +18,7 @@ import {
   zonedTimeToUtc,
   type Rates,
 } from "@lemmido/shared";
-import { signedInUserId } from "../auth.ts";
+import { signedInUserId, trackingToken } from "../auth.ts";
 import { fetchTripLegs, type LatLng } from "../google-routes.ts";
 import { findAvailableHelpers, freeStartTimes } from "../helper-availability.ts";
 
@@ -160,8 +163,10 @@ bookingRoutes.post("/check-availability", async (c) => {
 
 // The details a trip and its price are worked out from, or an error message.
 // onSiteMinutes is the driver's waiting time or the companion's service time.
+// roundTrip (default false) asks a driver in our vehicle to bring the customer back
+// to the pickup; days (default 1) is how many days the job runs over.
 function parseTripRequest(fields: Record<string, unknown>) {
-  const { serviceId, vehicleSource, onSiteMinutes } = fields;
+  const { serviceId, vehicleSource, onSiteMinutes, roundTrip = false, days = 1 } = fields;
   const from = parseLatLng(fields.from);
   const to = parseLatLng(fields.to);
   if (!from || !to) return "from and to must be { lat, lng }";
@@ -169,25 +174,34 @@ function parseTripRequest(fields: Record<string, unknown>) {
   if (typeof onSiteMinutes !== "number" || !Number.isFinite(onSiteMinutes) || onSiteMinutes < 0) {
     return "onSiteMinutes must be a number of minutes, 0 or more";
   }
+  if (typeof roundTrip !== "boolean") return "roundTrip must be true or false";
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_TRIP_DAYS) {
+    return `days must be a whole number from 1 to ${MAX_TRIP_DAYS}`;
+  }
   if (typeof serviceId !== "string" || !serviceId) return "serviceId is required";
-  return { serviceId, vehicleSource, from, to, onSiteMinutes } as const;
+  return { serviceId, vehicleSource, from, to, onSiteMinutes, roundTrip, days } as const;
 }
 
 type TripRequest = Exclude<ReturnType<typeof parseTripRequest>, string>;
 
-// The job's three legs (Base → From → To → Base) from Google, and whether it's
-// auto-approved (path A) with its price, or goes to an admin (path B). An error
-// message and HTTP status when the service doesn't exist or no route is found.
-async function workOutTrip({ serviceId, vehicleSource, from, to, onSiteMinutes }: TripRequest) {
+// The job's legs from Google (Base → From → To → Base, with To → From before the
+// last leg on a round trip), and whether it's auto-approved (path A) with its price,
+// or goes to an admin (path B). An error message and HTTP status when the service
+// doesn't exist or no route is found.
+async function workOutTrip({ serviceId, vehicleSource, from, to, roundTrip, days, ...request }: TripRequest) {
   const [service] = await db
     .select({ serviceType: services.serviceType, autoPriced: services.autoPriced })
     .from(services)
     .where(eq(services.serviceId, serviceId));
   if (!service) return { error: `No service ${serviceId}`, status: 400 as const };
 
+  // A one-way driver doesn't wait, so any waiting time sent is ignored
+  const isRound = isRoundTrip(service.serviceType, vehicleSource, roundTrip);
+  const onSiteMinutes = hasOnSiteTime(service.serviceType, isRound) ? request.onSiteMinutes : 0;
+
   let legs;
   try {
-    legs = await fetchTripLegs(from, to);
+    legs = await fetchTripLegs(from, to, isRound);
   } catch (error) {
     console.error("Couldn't work out the route:", error);
     return { error: "Couldn't work out the route. Please try again.", status: 502 as const };
@@ -203,20 +217,24 @@ async function workOutTrip({ serviceId, vehicleSource, from, to, onSiteMinutes }
   const quote = quoteBooking({
     serviceType: service.serviceType,
     autoPriced: service.autoPriced,
+    days,
     vehicleSource,
     distanceKm: trip.distanceKm,
     driveMinutes: trip.driveMinutes,
     onSiteMinutes,
     rates,
   });
-  return { trip, quote, serviceType: service.serviceType };
+  return { trip: { ...trip, roundTrip: isRound, onSiteMinutes }, quote, serviceType: service.serviceType };
 }
 
 // POST /bookings/trip
 //   { serviceId: "ser_01", vehicleSource: "ours" | "customer",
-//     from: { lat, lng }, to: { lat, lng }, onSiteMinutes: 60 }
-// → { legs, distanceKm, driveMinutes, leaveBaseMinutes, taskMinutes, currency, quote }
+//     from: { lat, lng }, to: { lat, lng }, onSiteMinutes: 60, roundTrip?: true, days?: 1 }
+// → { legs, distanceKm, driveMinutes, leaveBaseMinutes, taskMinutes, roundTrip,
+//     onSiteMinutes, currency, quote }
 // The job's legs, the task length to check availability for, and the quote.
+// roundTrip and onSiteMinutes say what was actually priced: a driver in the
+// customer's vehicle is always a round trip, and a one-way driver doesn't wait.
 // A quote with approvalMode "admin" means an admin prices it.
 bookingRoutes.post("/trip", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -229,12 +247,12 @@ bookingRoutes.post("/trip", async (c) => {
 });
 
 // GET /bookings/price?serviceId=ser_01&vehicleSource=ours&fromLat=9.31&fromLng=76.61
-//                    &toLat=9.59&toLng=76.52&onSiteMinutes=60
+//                    &toLat=9.59&toLng=76.52&onSiteMinutes=60&roundTrip=true&days=1
 // → { approvalMode: "auto", currency: "INR", amount: 194500, travelAmount, onSiteAmount,
 //     billedKm, billedDriveHrs, billedOnSiteHrs, overrunRate }   (amounts in paise)
 //   or { approvalMode: "admin", reason }: not auto-approved, so an admin sends the price.
 // The price of an auto-approved booking (path A), checked by quoteBooking: an
-// auto-priced service, 9 h or less base to base, and every rate it needs.
+// auto-priced service, one day, 9 h or less base to base, and every rate it needs.
 bookingRoutes.get("/price", async (c) => {
   const number = (name: string) => {
     const value = c.req.query(name);
@@ -246,6 +264,8 @@ bookingRoutes.get("/price", async (c) => {
     from: { lat: number("fromLat"), lng: number("fromLng") },
     to: { lat: number("toLat"), lng: number("toLng") },
     onSiteMinutes: number("onSiteMinutes"),
+    roundTrip: c.req.query("roundTrip") === undefined ? undefined : c.req.query("roundTrip") === "true",
+    days: number("days"),
   });
   if (typeof request === "string") return c.json({ error: request }, 400);
 
@@ -256,22 +276,143 @@ bookingRoutes.get("/price", async (c) => {
   return c.json({ ...quote, currency: CURRENCY });
 });
 
-// Whether a day (YYYY-MM-DD, India time) already has MAX_BOOKINGS_PER_DAY open bookings
-async function isDayFull(day: string) {
-  const { rows } = await db.execute<{ count: number }>(sql`
-    SELECT COUNT(*)::int AS count
-    FROM ${bookings}
-    WHERE ${inArray(bookings.approvalStatus, [...bookingsAreOpen])}
-      AND ${day}::date BETWEEN (${bookings.dateTime} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
-                           AND (${bookings.endsAt} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
-  `);
-  return (rows[0]?.count ?? 0) >= MAX_BOOKINGS_PER_DAY;
+// The YYYY-MM-DD day n days after another
+function addDays(day: string, n: number) {
+  return new Date(parseDay(day)! + n * DAY_MS).toISOString().slice(0, 10);
 }
+
+// The first day from `from` to `to` (YYYY-MM-DD, India time, both included) that
+// already has MAX_BOOKINGS_PER_DAY open bookings, or null when none is full
+async function firstFullDay(from: string, to: string) {
+  const { rows } = await db.execute<{ day: string }>(sql`
+    SELECT to_char(day, 'YYYY-MM-DD') AS day
+    FROM generate_series(${from}::date, ${to}::date, interval '1 day') AS day
+    CROSS JOIN ${bookings}
+    WHERE ${inArray(bookings.approvalStatus, [...bookingsAreOpen])}
+      AND day::date BETWEEN (${bookings.dateTime} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+                        AND (${bookings.endsAt} AT TIME ZONE ${BUSINESS_TIMEZONE})::date
+    GROUP BY day
+    HAVING COUNT(*) >= ${MAX_BOOKINGS_PER_DAY}
+    ORDER BY day
+    LIMIT 1
+  `);
+  return rows[0]?.day ?? null;
+}
+
+// GET /bookings/mine   (Authorization: Bearer <token from the web app's /api/rt-token>)
+// → { bookings: [{ bookingId, serviceType, pickup, destination, dateTime, endsAt, ... }] }
+// The signed-in customer's own bookings for their dashboard, latest start first.
+// Amounts are minor units (paise for INR).
+const MY_BOOKINGS_LIMIT = 100;
+
+bookingRoutes.get("/mine", async (c) => {
+  const userId = await signedInUserId(c);
+  if (!userId) return c.json({ error: "Please sign in to see your bookings" }, 401);
+
+  const rows = await db
+    .select({
+      bookingId: bookings.bookingId,
+      serviceType: services.serviceType,
+      companionPurpose: bookings.companionPurpose,
+      vehicleSource: bookings.vehicleSource,
+      pickup: bookings.pickup,
+      destination: bookings.destination,
+      dateTime: bookings.dateTime,
+      endsAt: bookings.endsAt,
+      serviceHrs: bookings.serviceHrs,
+      approvalMode: bookings.approvalMode,
+      approvalStatus: bookings.approvalStatus,
+      quoteAmount: bookings.quoteAmount,
+      currency: bookings.currency,
+      payBy: bookings.payBy,
+      paymentStatus: bookings.paymentStatus,
+      jobStatus: bookings.jobStatus,
+      helperAssigned: sql<boolean>`${bookings.helperId} is not null`,
+      denialReason: bookings.denialReason,
+      createdAt: bookings.createdAt,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(services.serviceId, bookings.serviceId))
+    .where(eq(bookings.userId, userId))
+    .orderBy(desc(bookings.dateTime))
+    .limit(MY_BOOKINGS_LIMIT);
+
+  return c.json({ bookings: rows });
+});
+
+// Statuses where a booking won't go ahead, so there's nothing to track
+const CLOSED_STATUSES = ["denied", "declined", "expired", "cancelled"];
+
+// GET /bookings/mine/:bookingId   (Authorization: Bearer <token from the web app's /api/rt-token>)
+// → { booking: {...}, helper: { name, phoneNumber } | null, tracking: { token } | null }
+// One of the signed-in customer's bookings, with everything the booking page shows.
+// tracking.token lets the realtime service (apps/realtime) send them the helper's live
+// location; it's only given while a helper is assigned and the job isn't over.
+bookingRoutes.get("/mine/:bookingId", async (c) => {
+  const userId = await signedInUserId(c);
+  if (!userId) return c.json({ error: "Please sign in to see your bookings" }, 401);
+
+  const [row] = await db
+    .select({
+      booking: {
+        bookingId: bookings.bookingId,
+        serviceType: services.serviceType,
+        companionPurpose: bookings.companionPurpose,
+        vehicleSource: bookings.vehicleSource,
+        description: bookings.description,
+        pickup: bookings.pickup,
+        destination: bookings.destination,
+        dateTime: bookings.dateTime,
+        jobStartsAt: bookings.jobStartsAt,
+        endsAt: bookings.endsAt,
+        serviceHrs: bookings.serviceHrs,
+        effortHrs: bookings.effortHrs,
+        jobStatus: bookings.jobStatus,
+        expectedEndAt: bookings.expectedEndAt,
+        completedAt: bookings.completedAt,
+        overrunRate: bookings.overrunRate,
+        overrunHrs: bookings.overrunHrs,
+        overrunAmount: bookings.overrunAmount,
+        overrunStatus: bookings.overrunStatus,
+        approvalMode: bookings.approvalMode,
+        approvalStatus: bookings.approvalStatus,
+        quoteAmount: bookings.quoteAmount,
+        currency: bookings.currency,
+        payBy: bookings.payBy,
+        paymentStatus: bookings.paymentStatus,
+        denialReason: bookings.denialReason,
+        cancellationReason: bookings.cancellationReason,
+        createdAt: bookings.createdAt,
+      },
+      helperId: bookings.helperId,
+      helperName: users.name,
+      helperPhone: users.phoneNumber,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(services.serviceId, bookings.serviceId))
+    .leftJoin(users, eq(users.id, bookings.helperId))
+    // Someone else's booking id answers like a missing one
+    .where(and(eq(bookings.bookingId, c.req.param("bookingId")), eq(bookings.userId, userId)))
+    .limit(1);
+  if (!row) return c.json({ error: "Booking not found" }, 404);
+
+  const { booking, helperId, helperName, helperPhone } = row;
+  const trackable =
+    helperId !== null && booking.jobStatus !== "completed" && !CLOSED_STATUSES.includes(booking.approvalStatus);
+  return c.json({
+    booking,
+    helper: helperId ? { name: helperName, phoneNumber: helperPhone } : null,
+    tracking: trackable ? { token: await trackingToken(userId, helperId, booking.bookingId) } : null,
+  });
+});
 
 // POST /bookings   (Authorization: Bearer <token from the web app's /api/rt-token>)
 //   { serviceId, vehicleSource, from: { lat, lng, address }, to: { lat, lng, address },
-//     onSiteMinutes, date: "YYYY-MM-DD", time: "HH:MM", companionPurpose?, description? }
+//     onSiteMinutes, date: "YYYY-MM-DD", time: "HH:MM", roundTrip?, days?, endDate?,
+//     companionPurpose?, description? }
 // → 201 { bookingId, approvalMode, approvalStatus, quoteAmount, currency, payBy, ... }
+// A job over several days sends days and endDate, its last day (date + days − 1).
+// It goes to an admin, and takes a slot on every day from date to endDate.
 // Saves the signed-in customer's booking. The trip and price are worked out again
 // here, never taken from the browser. Path A (auto) waits for payment, and a helper
 // is assigned once it's paid; path B (admin) waits for an admin's quote.
@@ -283,7 +424,7 @@ bookingRoutes.post("/", async (c) => {
   const fields = body ?? {};
   const request = parseTripRequest(fields);
   if (typeof request === "string") return c.json({ error: request }, 400);
-  const { date, time, companionPurpose, description } = fields;
+  const { date, time, endDate, companionPurpose, description } = fields;
   const pickup = (fields.from as Record<string, unknown>).address;
   const destination = (fields.to as Record<string, unknown>).address;
   if (typeof pickup !== "string" || !pickup.trim() || typeof destination !== "string" || !destination.trim()) {
@@ -294,6 +435,14 @@ bookingRoutes.post("/", async (c) => {
   }
   if (typeof time !== "string" || !isSlotTime(time)) {
     return c.json({ error: "time must be HH:MM on the hour or half hour" }, 400);
+  }
+  // The last day has to agree with the number of days, so the two can't disagree
+  const lastDay = addDays(date, request.days - 1);
+  if (request.days > 1 && endDate !== lastDay) {
+    return c.json({ error: `endDate must be ${lastDay}, the last of the ${request.days} days from date` }, 400);
+  }
+  if (request.days === 1 && endDate !== undefined && endDate !== date) {
+    return c.json({ error: "endDate must be the same as date for a one-day booking (or left out)" }, 400);
   }
   if (description !== undefined && typeof description !== "string") {
     return c.json({ error: "description must be text" }, 400);
@@ -319,9 +468,13 @@ bookingRoutes.post("/", async (c) => {
     return c.json({ error: "Only a companion booking has a companionPurpose" }, 400);
   }
 
-  const times = bookingTimes(start, trip, request.onSiteMinutes);
-  if (await isDayFull(date)) {
-    return c.json({ error: "That day is fully booked. Please pick another day." }, 409);
+  const times = bookingTimes(start, trip, trip.onSiteMinutes, request.days);
+  const fullDay = await firstFullDay(date, lastDay);
+  if (fullDay) {
+    return c.json(
+      { error: request.days > 1 ? `${fullDay} is fully booked. Please pick other days.` : "That day is fully booked. Please pick another day." },
+      409,
+    );
   }
   // Path A: a helper must be free for the whole job, base to base, before the customer
   // pays. This doesn't hold one: payment checks again and assigns them (R8). Path B's
@@ -349,7 +502,7 @@ bookingRoutes.post("/", async (c) => {
       destination: destination.trim(),
       dateTime: start,
       // The driver's waiting time or the companion's service time
-      serviceHrs: (request.onSiteMinutes / 60).toFixed(1),
+      serviceHrs: (trip.onSiteMinutes / 60).toFixed(1),
       jobStartsAt: times.jobStartsAt,
       endsAt: times.endsAt,
       plannedEndsAt: times.endsAt,

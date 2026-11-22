@@ -16,12 +16,14 @@ function baseLocation(): LatLng {
 
 const waypoint = ({ lat, lng }: LatLng) => ({ location: { latLng: { latitude: lat, longitude: lng } } });
 
-// The three driving legs of a job, Base → From → To → Base, from Google's Routes API
-// in one request. Throws when the key is missing or Google finds no route.
-export async function fetchTripLegs(from: LatLng, to: LatLng): Promise<Leg[]> {
+// The driving legs of a job from Google's Routes API in one request: Base → From →
+// To → Base, or on a round trip Base → From → To → From → Base. Throws when the key
+// is missing or Google finds no route.
+export async function fetchTripLegs(from: LatLng, to: LatLng, roundTrip: boolean): Promise<Leg[]> {
   const key = process.env.GOOGLE_ROUTES_API_KEY;
   if (!key) throw new Error("GOOGLE_ROUTES_API_KEY must be set in .env");
   const base = baseLocation();
+  const stops = roundTrip ? [from, to, from] : [from, to];
 
   const res = await fetch(ROUTES_URL, {
     method: "POST",
@@ -33,7 +35,7 @@ export async function fetchTripLegs(from: LatLng, to: LatLng): Promise<Leg[]> {
     },
     body: JSON.stringify({
       origin: waypoint(base),
-      intermediates: [waypoint(from), waypoint(to)],
+      intermediates: stops.map(waypoint),
       destination: waypoint(base),
       travelMode: "DRIVE",
     }),
@@ -44,7 +46,7 @@ export async function fetchTripLegs(from: LatLng, to: LatLng): Promise<Leg[]> {
     routes?: { legs?: { distanceMeters?: number; duration?: string }[] }[];
   };
   const legs = data.routes?.[0]?.legs;
-  if (!legs || legs.length !== 3) throw new Error("Routes API found no driving route");
+  if (!legs || legs.length !== stops.length + 1) throw new Error("Routes API found no driving route");
 
   // Duration comes as a string of seconds, e.g. "1234s". A leg between two points
   // at the same spot has no distance field at all.

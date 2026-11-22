@@ -105,13 +105,13 @@ const SHORT_DRIVE = {
 };
 
 test("auto-approved: auto-priced service, 9 h or less, every rate there", () => {
-  const quote = quoteBooking({ ...SHORT_DRIVE, autoPriced: true });
+  const quote = quoteBooking({ ...SHORT_DRIVE, autoPriced: true, days: 1 });
   assert.equal(quote.approvalMode, "auto");
   assert.deepEqual(quote, priceBooking(SHORT_DRIVE));
 });
 
 test("a service that isn't auto-priced goes to an admin", () => {
-  assert.deepEqual(quoteBooking({ ...SHORT_DRIVE, autoPriced: false }), {
+  assert.deepEqual(quoteBooking({ ...SHORT_DRIVE, autoPriced: false, days: 1 }), {
     approvalMode: "admin",
     reason: "This service is priced by an admin",
   });
@@ -119,9 +119,16 @@ test("a service that isn't auto-priced goes to an admin", () => {
 
 test("more than 9 h of effort, base to base, goes to an admin", () => {
   // Exactly 9 h is still auto; 8 h 31 min of waiting plus 30 min driving rounds to 9.5 h
-  assert.equal(quoteBooking({ ...SHORT_DRIVE, driveMinutes: 90, onSiteMinutes: 450, autoPriced: true }).approvalMode, "auto");
-  assert.deepEqual(quoteBooking({ ...SHORT_DRIVE, driveMinutes: 30, onSiteMinutes: 511, autoPriced: true }), {
+  assert.equal(quoteBooking({ ...SHORT_DRIVE, driveMinutes: 90, onSiteMinutes: 450, autoPriced: true, days: 1 }).approvalMode, "auto");
+  assert.deepEqual(quoteBooking({ ...SHORT_DRIVE, driveMinutes: 30, onSiteMinutes: 511, autoPriced: true, days: 1 }), {
     approvalMode: "admin",
     reason: "The job takes more than 9 hours",
+  });
+});
+
+test("a trip over more than one day goes to an admin, without a price", () => {
+  assert.deepEqual(quoteBooking({ ...SHORT_DRIVE, autoPriced: true, days: 2 }), {
+    approvalMode: "admin",
+    reason: "Trips over more than one day are priced by an admin",
   });
 });
