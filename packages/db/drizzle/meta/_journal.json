@@ -43,6 +43,13 @@
       "when": 1795046305280,
       "tag": "0005_staycations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795523728636,
+      "tag": "0006_delete_dashboard",
+      "breakpoints": true
     }
   ]
 }

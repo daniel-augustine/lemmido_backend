@@ -39,13 +39,6 @@ export const overrunStatus = pgEnum("overrun_status", [
   "waived",
 ]);
 
-export const dashboardSection = pgEnum("dashboard_section", [
-  "approved",
-  "pending",
-  "denied",
-  "cancelled",
-]);
-
 export const alertKind = pgEnum("alert_kind", [
   "running_over",
   "break_due",
