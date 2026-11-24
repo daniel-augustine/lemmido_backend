@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { bookings, bookingsAreOpen, dashboard, db, serviceRates, services, users } from "@lemmido/db";
+import { bookings, bookingsAreOpen, db, serviceRates, services, users } from "@lemmido/db";
 import {
   bookingTimes,
   BUSINESS_TIMEZONE,
@@ -517,15 +517,6 @@ bookingRoutes.post("/", async (c) => {
       confirmBy: times.confirmBy,
       payBy,
       paymentStatus: "unpaid",
-    });
-    await tx.insert(dashboard).values({
-      dashId: `dash_${bookingId}`,
-      userId,
-      bookingId,
-      // Path A is approved by the backend on submit; path B waits for an admin
-      bookAccept: auto,
-      helperAccept: false,
-      section: "pending",
     });
   });
 
