@@ -14,6 +14,7 @@
     "seed": "tsx src/seed.ts",
     "sync-tours": "tsx src/sync-tour-packages.ts",
     "sync-staycations": "tsx src/sync-staycations.ts",
+    "sync-rates": "tsx src/sync-service-rates.ts",
     "typecheck": "tsc --noEmit"
   },
   "packageManager": "pnpm@10.32.1",

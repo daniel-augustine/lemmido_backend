@@ -1,0 +1,14 @@
+{
+  "services": [
+    {
+      "id": "ser_01",
+      "service": "driver",
+      "ratesInr": { "per_km": 25, "drive_hour": 100, "waiting_hour": 20 }
+    },
+    {
+      "id": "ser_03",
+      "service": "companion",
+      "ratesInr": { "per_km": 25, "drive_hour": 100, "service_hour": 100 }
+    }
+  ]
+}

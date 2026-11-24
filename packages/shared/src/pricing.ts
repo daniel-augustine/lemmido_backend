@@ -17,12 +17,19 @@ export type Rates = Partial<Record<RateKind, number>>;
 export type PriceRequest = {
   serviceType: string;
   vehicleSource: VehicleSource;
-  // The route the helper drives, from the travel time lookup
+  // The route the helper drives, from the travel time lookup: every leg, base to base
   distanceKm: number;
   driveMinutes: number;
   // Time at the destination: the driver's waiting time or the companion's service time
   onSiteMinutes: number;
   rates: Rates;
+};
+
+// What quoteBooking also needs to decide whether it can price the booking itself
+export type QuoteRequest = PriceRequest & {
+  autoPriced: boolean;
+  // How many days the job runs over: more than one is priced by an admin
+  days: number;
 };
 
 export type Quote =
@@ -88,12 +95,14 @@ export function priceBooking(request: PriceRequest): Quote {
 }
 
 // Whether the backend can approve and price the booking itself (path A), and the
-// price if so. Path A needs all three; anything else goes to an admin (path B):
+// price if so. Path A needs all four; anything else goes to an admin (path B):
 //   1. the service is auto-priced (services.auto_priced)
-//   2. the helper's whole effort, base to base, is 9 h or less
-//   3. the pricing rules can price it (a rule for the service and every rate it needs)
-export function quoteBooking(request: PriceRequest & { autoPriced: boolean }): Quote {
+//   2. the job is on one day
+//   3. the helper's whole effort, base to base, is 9 h or less
+//   4. the pricing rules can price it (a rule for the service and every rate it needs)
+export function quoteBooking(request: QuoteRequest): Quote {
   if (!request.autoPriced) return { approvalMode: "admin", reason: "This service is priced by an admin" };
+  if (request.days > 1) return { approvalMode: "admin", reason: "Trips over more than one day are priced by an admin" };
   const effortMs = roundUpToSlot((request.driveMinutes + request.onSiteMinutes) * MINUTE_MS);
   if (effortMs > MAX_TASK_MS) {
     return { approvalMode: "admin", reason: `The job takes more than ${MAX_TASK_MS / HOUR_MS} hours` };

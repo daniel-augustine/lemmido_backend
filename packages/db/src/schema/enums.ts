@@ -64,3 +64,7 @@ export const rateKind = pgEnum("rate_kind", [
 
 // Where a companion goes with the customer (bookings.companion_purpose)
 export const companionPurpose = pgEnum("companion_purpose", ["hospital", "bank", "office", "other"]);
+
+// Whose vehicle the helper drives (bookings.vehicle_source): ours is charged
+// per km, the customer's per hour of driving
+export const vehicleSource = pgEnum("vehicle_source", ["ours", "customer"]);
