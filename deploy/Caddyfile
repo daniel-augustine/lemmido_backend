@@ -1,0 +1,15 @@
+# HTTPS reverse proxy. Caddy fetches and renews Let's Encrypt certificates for each
+# domain once its DNS A record points at this server. Domains come from production.env.
+
+{$WEB_DOMAIN}, www.{$WEB_DOMAIN} {
+	reverse_proxy web:3000
+}
+
+{$API_DOMAIN} {
+	reverse_proxy api:8081
+}
+
+# WebSockets pass through reverse_proxy as is
+{$RT_DOMAIN} {
+	reverse_proxy realtime:8080
+}

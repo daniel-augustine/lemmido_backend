@@ -1,0 +1,97 @@
+# Production stack on the Hostinger VPS. Expects both repos side by side:
+#   /opt/lemmido/lemmido_backend   (this repo)
+#   /opt/lemmido/lemmido_frontend
+# Run through deploy/deploy.sh, which passes --env-file deploy/production.env.
+# Only Caddy is exposed to the internet (80/443); it gets HTTPS certificates itself.
+name: lemmido
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ..
+    image: lemmido-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      API_PORT: 8081
+      WEB_ORIGIN: https://${WEB_DOMAIN},https://www.${WEB_DOMAIN}
+      BASE_LAT: ${BASE_LAT}
+      BASE_LNG: ${BASE_LNG}
+      GOOGLE_ROUTES_API_KEY: ${GOOGLE_ROUTES_API_KEY}
+    command: ["pnpm", "--filter", "api", "start"]
+
+  realtime:
+    image: lemmido-backend
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 8080
+    command: ["pnpm", "--filter", "realtime", "start"]
+    depends_on:
+      - api # same image; api's service builds it
+
+  web:
+    build:
+      context: ../../lemmido_frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+        NEXT_PUBLIC_REALTIME_URL: wss://${RT_DOMAIN}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+    image: lemmido-frontend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: https://${WEB_DOMAIN}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_CLIENT_SECRET: ${COGNITO_CLIENT_SECRET}
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN}
+      COGNITO_REGION: ${COGNITO_REGION}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      RT_DOMAIN: ${RT_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+      - realtime
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
