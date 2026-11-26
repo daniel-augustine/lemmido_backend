@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { pool } from "@lemmido/db";
+import { adminRoutes } from "./routes/admin.ts";
 import { bookingRoutes } from "./routes/bookings.ts";
 import { staycationRoutes } from "./routes/staycations.ts";
 import { tourPackageRoutes } from "./routes/tour-packages.ts";
@@ -15,6 +16,7 @@ const app = new Hono();
 app.use("*", cors({ origin: WEB_ORIGINS }));
 
 app.get("/health", (c) => c.text("ok"));
+app.route("/admin", adminRoutes);
 app.route("/bookings", bookingRoutes);
 app.route("/tour-packages", tourPackageRoutes);
 app.route("/staycations", staycationRoutes);
