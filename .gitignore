@@ -8,3 +8,9 @@ build/
 .DS_Store
 coverage/
 .turbo/
+
+# production secrets on the server
+deploy/production.env
+
+# local VPS connection details
+deploy/vps.env
