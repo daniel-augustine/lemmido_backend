@@ -70,6 +70,9 @@ services:
       COGNITO_DOMAIN: ${COGNITO_DOMAIN}
       COGNITO_REGION: ${COGNITO_REGION}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+    volumes:
+      # Resized images live here; keeping it across redeploys avoids re-encoding them every time
+      - web_cache:/app/.next/cache/images
 
   caddy:
     image: caddy:2
@@ -95,3 +98,4 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  web_cache:
