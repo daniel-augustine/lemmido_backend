@@ -123,7 +123,7 @@ bookingRoutes.get("/unavailable-dates", async (c) => {
 });
 
 // GET /bookings/available-times?date=YYYY-MM-DD&taskMinutes=150
-// → { times: ["08:00", "08:30", ...] }: India-time start times on that day, on the
+// → { times: ["08:00", "09:00", ...] }: India-time start times on that day, on the
 // :00/:30 grid (R1), when at least one helper could take a task this long.
 bookingRoutes.get("/available-times", async (c) => {
   const date = c.req.query("date");
