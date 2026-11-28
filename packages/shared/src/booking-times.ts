@@ -20,11 +20,8 @@ export function isSlotTime(time: string) {
   return /^([01]\d|2[0-3]):(00|30)$/.test(time);
 }
 
-// Every start time customers can pick on a day: 00:00, 00:30 … 23:30
-export const SLOT_TIMES = Array.from({ length: 48 }, (_, i) => {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(Math.floor(i / 2))}:${i % 2 === 0 ? "00" : "30"}`;
-});
+// Every pickup time customers can pick on a day, one hour apart: 00:00, 01:00 … 23:00
+export const SLOT_TIMES = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 
 // One formatter per time zone: building them is slow, and this runs for every slot
 const formatters = new Map<string, Intl.DateTimeFormat>();

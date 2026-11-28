@@ -20,11 +20,11 @@ test("start times are on :00 and :30 only", () => {
   assert.ok(!isSlotTime("8:00"));
 });
 
-test("a day has 48 start times", () => {
-  assert.equal(SLOT_TIMES.length, 48);
+test("a day has 24 start times, one hour apart", () => {
+  assert.equal(SLOT_TIMES.length, 24);
   assert.equal(SLOT_TIMES[0], "00:00");
-  assert.equal(SLOT_TIMES[17], "08:30");
-  assert.equal(SLOT_TIMES[47], "23:30");
+  assert.equal(SLOT_TIMES[8], "08:00");
+  assert.equal(SLOT_TIMES[23], "23:00");
 });
 
 test("India time is UTC+05:30", () => {
